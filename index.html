@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description"
+    content="Spine 2D Clone - Web-based 2D skeleton animation tool with auto-rigging, auto-meshing, and Spine-compatible export" />
+  <title>Spine 2D Clone — Skeleton Animation Editor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="/src/styles/index.css" />
+</head>
+
+<body>
+  <div id="app">
+    <!-- Top Toolbar -->
+    <header id="toolbar" class="toolbar">
+      <div class="toolbar-group toolbar-brand">
+        <span class="brand-icon">◆</span>
+        <span class="brand-text">Spine 2D Clone</span>
+      </div>
+      <div class="toolbar-group toolbar-tools">
+        <button id="btn-select" class="tool-btn active" title="Select (V)" data-tool="select">
+          <svg width="16" height="16" viewBox="0 0 16 16">
+            <path d="M3 1l10 6.5L8 9l-2 6L3 1z" fill="currentColor" />
+          </svg>
+        </button>
+        <button id="btn-bone" class="tool-btn" title="Create Bone (B)" data-tool="bone">
+          <svg width="16" height="16" viewBox="0 0 16 16">
+            <circle cx="3" cy="3" r="2.5" fill="currentColor" />
+            <line x1="3" y1="3" x2="13" y2="13" stroke="currentColor" stroke-width="1.5" />
+            <circle cx="13" cy="13" r="2.5" fill="currentColor" />
+          </svg>
+        </button>
+        <button id="btn-move" class="tool-btn" title="Move (G)" data-tool="move">
+          <svg width="16" height="16" viewBox="0 0 16 16">
+            <path d="M8 1v14M1 8h14M8 1l-2 2h4L8 1zM8 15l-2-2h4L8 15zM1 8l2-2v4L1 8zM15 8l-2-2v4L15 8z"
+              fill="currentColor" />
+          </svg>
+        </button>
+        <button id="btn-rotate" class="tool-btn" title="Rotate (R)" data-tool="rotate">
+          <svg width="16" height="16" viewBox="0 0 16 16">
+            <path d="M13 8A5 5 0 1 1 8 3" fill="none" stroke="currentColor" stroke-width="1.5" />
+            <path d="M10 1l3 2-3 2" fill="currentColor" />
+          </svg>
+        </button>
+        <div class="toolbar-separator"></div>
+        <button id="btn-pan" class="tool-btn" title="Pan (H)" data-tool="pan">
+          <svg width="16" height="16" viewBox="0 0 16 16">
+            <path
+              d="M8 1v4M8 11v4M1 8h4M11 8h4M8 1l-1.5 2h3L8 1zM8 15l-1.5-2h3L8 15zM1 8l2-1.5v3L1 8zM15 8l-2-1.5v3L15 8z"
+              stroke="currentColor" stroke-width="1" fill="currentColor" />
+          </svg>
+        </button>
+        <button id="btn-zoom-fit" class="tool-btn" title="Zoom to Fit (F)">
+          <svg width="16" height="16" viewBox="0 0 16 16">
+            <rect x="3" y="3" width="10" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.5" />
+            <path d="M1 5V2a1 1 0 011-1h3M11 1h3a1 1 0 011 1v3M15 11v3a1 1 0 01-1 1h-3M5 15H2a1 1 0 01-1-1v-3"
+              stroke="currentColor" stroke-width="1" />
+          </svg>
+        </button>
+        <div class="toolbar-separator"></div>
+        <button id="btn-auto-rig" class="tool-btn auto-rig-btn" title="Auto Rig with MediaPipe (detect pose)">
+          🦴
+        </button>
+      </div>
+      <div class="toolbar-group toolbar-actions">
+        <button id="btn-import" class="action-btn" title="Import Image">
+          <svg width="14" height="14" viewBox="0 0 16 16">
+            <path d="M8 1v10M4 7l4 4 4-4M2 13h12" stroke="currentColor" stroke-width="1.5" fill="none" />
+          </svg>
+          Import
+        </button>
+        <button id="btn-export" class="action-btn accent" title="Export Spine JSON">
+          <svg width="14" height="14" viewBox="0 0 16 16">
+            <path d="M8 11V1M4 5l4-4 4 4M2 13h12" stroke="currentColor" stroke-width="1.5" fill="none" />
+          </svg>
+          Export
+        </button>
+        <button id="btn-save" class="action-btn" title="Save Project (Ctrl+S)">
+          <svg width="14" height="14" viewBox="0 0 16 16">
+            <path d="M12 15H4a2 2 0 01-2-2V3a2 2 0 012-2h6l4 4v8a2 2 0 01-2 2z" fill="none" stroke="currentColor"
+              stroke-width="1.5" />
+            <path d="M5 1v4h5V1M5 15v-5h6v5" stroke="currentColor" stroke-width="1" />
+          </svg>
+          Save
+        </button>
+        <button id="btn-load" class="action-btn" title="Load Project (Ctrl+O)">
+          <svg width="14" height="14" viewBox="0 0 16 16">
+            <path d="M2 4h5l2 2h5v7a1 1 0 01-1 1H3a1 1 0 01-1-1V4z" fill="none" stroke="currentColor"
+              stroke-width="1.5" />
+          </svg>
+          Load
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <div id="main-content" class="main-content">
+      <!-- Left Panel: Bone Tree + Layers -->
+      <aside id="left-panel" class="panel left-panel">
+        <div class="panel-section" id="bone-tree-section">
+          <div class="panel-header">
+            <span class="panel-title">Bones</span>
+            <button id="btn-add-bone-root" class="panel-action-btn" title="Add Root Bone">+</button>
+          </div>
+          <div id="bone-tree" class="panel-body tree-view">
+            <div class="empty-state">No bones yet. Use the Bone tool (B) to create bones.</div>
+          </div>
+        </div>
+        <div class="panel-resize-handle horizontal"></div>
+        <div class="panel-section" id="layer-section">
+          <div class="panel-header">
+            <span class="panel-title">Images / Layers</span>
+            <button id="btn-add-image" class="panel-action-btn" title="Import Image">+</button>
+          </div>
+          <div id="layer-list" class="panel-body layer-list">
+            <div class="empty-state">No images. Click + or drag & drop files.</div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Canvas Viewport -->
+      <main id="viewport-container" class="viewport-container">
+        <canvas id="viewport-canvas"></canvas>
+
+        <!-- Auto-Rig Preview Bar (hidden by default) -->
+        <div id="autorig-preview-bar" class="autorig-preview-bar" style="display:none;">
+          <span class="arb-icon">🦴</span>
+          <span class="arb-label">Pose Preview</span>
+          <button id="arb-apply" class="arb-btn apply">✓ Apply Rig</button>
+          <button id="arb-cancel" class="arb-btn cancel">✕ Cancel</button>
+          <span class="arb-hint">Enter to apply · Esc to cancel</span>
+        </div>
+        <div id="viewport-info" class="viewport-info">
+          <span id="zoom-level">100%</span>
+          <span id="cursor-pos">0, 0</span>
+        </div>
+      </main>
+
+      <!-- Right Panel: Properties -->
+      <aside id="right-panel" class="panel right-panel">
+        <div class="panel-section">
+          <div class="panel-header">
+            <span class="panel-title">Properties</span>
+          </div>
+          <div id="properties-panel" class="panel-body properties">
+            <div class="empty-state">Select a bone or image to view properties.</div>
+          </div>
+        </div>
+        <div class="panel-resize-handle horizontal"></div>
+        <div class="panel-section" id="slots-section">
+          <div class="panel-header">
+            <span class="panel-title">Slots</span>
+            <button id="btn-add-slot" class="panel-action-btn" title="Add Slot">+</button>
+          </div>
+          <div id="slots-list" class="panel-body slots-list">
+            <div class="empty-state">No slots. Create bones and attach images.</div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- Timeline Panel -->
+    <div id="timeline-panel" class="timeline-panel">
+      <div class="timeline-toolbar">
+        <div class="timeline-controls">
+          <button id="tl-play" class="tl-btn" title="Play / Pause (Space)">▶</button>
+          <button id="tl-stop" class="tl-btn" title="Stop">⏹</button>
+          <button id="tl-loop" class="tl-btn active" title="Toggle Loop">🔁</button>
+          <div class="tl-separator"></div>
+          <select id="tl-anim-select" class="tl-select" title="Select Animation">
+            <option disabled selected>(no animation)</option>
+          </select>
+          <button id="tl-add-anim" class="tl-btn small" title="New Animation">+ Anim</button>
+          <div class="tl-separator"></div>
+          <button id="tl-add-key" class="tl-btn accent" title="Insert Keyframe (K)">◆ Key</button>
+          <span id="tl-time" class="tl-time">0.00s</span>
+        </div>
+      </div>
+      <canvas id="timeline-canvas"></canvas>
+    </div>
+
+    <!-- Status Bar -->
+    <footer id="status-bar" class="status-bar">
+      <span id="status-message">Ready</span>
+      <span id="status-info"></span>
+    </footer>
+  </div>
+
+  <!-- Hidden file inputs -->
+  <input type="file" id="file-import-image" accept=".png,.jpg,.jpeg,.psd" multiple hidden />
+  <input type="file" id="file-load-project" accept=".json,.spine2d" hidden />
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+
+</html>
