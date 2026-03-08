@@ -86,6 +86,23 @@ class App {
         bus.on('bones:changed', () => this._updateStatusInfo());
         bus.on('images:changed', () => this._updateStatusInfo());
 
+        // When an image is selected, switch mesh weight preview if in mesh edit mode
+        bus.on('images:selected', (entry) => {
+            if (this._meshEditMode && entry) {
+                // Generate mesh for this image if it doesn't exist
+                if (!this.meshSystem.getMesh(entry.id)) {
+                    const cols = parseInt(document.getElementById('mesh-cols')?.value || '5');
+                    const rows = parseInt(document.getElementById('mesh-rows')?.value || '8');
+                    const mesh = this.meshSystem.generateMesh(entry, cols, rows);
+                    this.meshSystem.autoComputeWeights(mesh, entry);
+                }
+                this.meshSystem.startWeightPreview(entry.id);
+                this.meshSystem.selectedVertexIdx = -1;
+                document.getElementById('weight-editor-panel').style.display = 'none';
+                this.viewport.render();
+            }
+        });
+
         // Toast events from timeline
         bus.on('toast', (data) => this.ui.showToast(data.message, data.type));
 
@@ -173,6 +190,11 @@ class App {
             this._startAutoRigPreview();
         });
 
+        // Auto Map — bind images to bones by name
+        document.getElementById('btn-auto-map')?.addEventListener('click', () => {
+            this._autoMapImagesToBones();
+        });
+
         // Preview bar buttons
         document.getElementById('arb-apply')?.addEventListener('click', () => {
             this._applyAutoRig();
@@ -252,8 +274,7 @@ class App {
         btn?.classList.add('loading');
 
         try {
-            const image = this.imageManager.selectedImage || this.imageManager.images[0];
-            const found = await this.autoRigger.detectAndPreview(image);
+            const found = await this.autoRigger.detectAndPreview(this.imageManager);
 
             if (found) {
                 // Show the preview bar
@@ -278,10 +299,8 @@ class App {
         // Hide auto-rig preview bar
         document.getElementById('autorig-preview-bar').style.display = 'none';
 
-        // Auto-create slots mapping bones to the image
-        this.slotSystem.autoCreateSlots(this.boneSystem.bones, this.imageManager.images);
-
-        // Auto-generate mesh and weights for each image
+        // Generate mesh and weights for each image
+        // Images stay at world positions — mesh LBS weights handle per-bone deformation
         for (const img of this.imageManager.images) {
             const mesh = this.meshSystem.generateMesh(img, 5, 8);
             this.meshSystem.autoComputeWeights(mesh, img);
@@ -291,10 +310,10 @@ class App {
         // This MUST happen after bones are finalized but before user edits
         this.animSystem.captureSetupPose();
 
-        // Show weight preview for the first image
+        // Show weight preview for the selected image (or first)
         if (this.imageManager.images.length > 0) {
-            const firstImg = this.imageManager.images[0];
-            this.meshSystem.startWeightPreview(firstImg.id);
+            const targetImg = this.imageManager.selectedImage || this.imageManager.images[0];
+            this.meshSystem.startWeightPreview(targetImg.id);
             document.getElementById('weight-preview-bar').style.display = '';
         }
 
@@ -331,7 +350,96 @@ class App {
         this.ui.showToast('Auto-rig cancelled', 'info');
     }
 
-    // ========== MESH EDIT MODE ==========
+    /**
+     * Auto map images to bones by matching names.
+     * Priority: exact match → partial match → nearest bone.
+     * Sets boneName and recalculates mesh weights per image.
+     */
+    _autoMapImagesToBones() {
+        const bones = this.boneSystem.bones;
+        const images = this.imageManager.images;
+
+        if (bones.length === 0 || images.length === 0) {
+            this.ui.showToast('Need both bones and images to auto-map', 'warning');
+            return;
+        }
+
+        let mapped = 0;
+        for (const img of images) {
+            const bone = this._findMatchingBone(img);
+            if (bone) {
+                // Only set boneName for organizational purposes (tree display)
+                // Do NOT recalculate weights — that would change image appearance
+                img.boneName = bone.name;
+                mapped++;
+            }
+        }
+
+        this.ui.updateBoneTree();
+        this.ui.updateLayerList();
+        this.ui.updateProperties();
+        this.viewport.render();
+        this.ui.showToast(`Mapped ${mapped} images to bones`, 'success');
+    }
+
+    /**
+     * Find the best matching bone for an image by name.
+     */
+    _findMatchingBone(img) {
+        const bones = this.boneSystem.bones;
+        const imgName = img.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+
+        // 1. Exact name match
+        for (const bone of bones) {
+            if (bone.name.toLowerCase() === imgName) return bone;
+        }
+
+        // 2. Partial match — longest bone name that matches
+        let bestMatch = null;
+        let bestLen = 0;
+        for (const bone of bones) {
+            const bn = bone.name.toLowerCase();
+            if (bn === 'root') continue;
+            if (imgName.includes(bn) || bn.includes(imgName)) {
+                if (bn.length > bestLen) {
+                    bestLen = bn.length;
+                    bestMatch = bone;
+                }
+            }
+        }
+        if (bestMatch) return bestMatch;
+
+        // 3. Fallback: nearest bone to image center
+        const cx = img.x + img.width / 2;
+        const cy = img.y + img.height / 2;
+        let nearestBone = bones[0];
+        let nearestDist = Infinity;
+        for (const bone of bones) {
+            const dx = cx - bone.worldX;
+            const dy = cy - bone.worldY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < nearestDist) {
+                nearestDist = dist;
+                nearestBone = bone;
+            }
+        }
+        return nearestBone;
+    }
+
+    /**
+     * Get a bone and all its descendants as a name list.
+     */
+    _getBoneAndDescendants(boneName) {
+        const bone = this.boneSystem.getBoneByName(boneName);
+        if (!bone) return null;
+        const result = [];
+        const collect = (b) => {
+            result.push(b.name);
+            for (const child of b.children) collect(child);
+        };
+        collect(bone);
+        return result;
+    }
 
     _enterMeshEditMode() {
         if (this.imageManager.images.length === 0) {
@@ -356,9 +464,10 @@ class App {
             }
         }
 
-        // Start weight preview for the first image
-        const firstImg = this.imageManager.images[0];
-        this.meshSystem.startWeightPreview(firstImg.id);
+        // Start weight preview for the currently selected image (or first if none selected)
+        const targetImg = this.imageManager.selectedImage || this.imageManager.images[0];
+        this.meshSystem.startWeightPreview(targetImg.id);
+        this.imageManager.selectImage(targetImg);
 
         // Show mesh edit bar
         document.getElementById('weight-preview-bar').style.display = 'flex';
@@ -629,8 +738,8 @@ class App {
                 this._handleMoveDrag(wx, wy);
             }
 
-            // Handle rotation drag
-            if (this._rotatingBone) {
+            // Handle rotation drag (bone or image)
+            if (this._rotatingBone || this._rotatingImage) {
                 this._handleRotateDrag(wx, wy);
             }
 
@@ -707,6 +816,20 @@ class App {
                 this._rotatingBone = null;
                 this.viewport.render();
             }
+
+            // Finish image rotation — push undo
+            if (this._rotatingImage) {
+                const img = this._rotatingImage;
+                const startRot = this._rotateStartRotation;
+                const endRot = img.rotation || 0;
+                this.history.push({
+                    execute: () => { img.rotation = endRot; },
+                    undo: () => { img.rotation = startRot; },
+                    description: `Rotate image ${img.name}`
+                });
+                this._rotatingImage = null;
+                this.viewport.render();
+            }
         });
     }
 
@@ -718,6 +841,8 @@ class App {
         if (bone) {
             this.boneSystem.selectBone(bone);
             this.imageManager.selectImage(null);
+            this.ui.updateProperties();
+            this.ui.updateBoneTree();
             this.viewport.render();
             return;
         }
@@ -727,6 +852,9 @@ class App {
         if (image) {
             this.imageManager.selectImage(image);
             this.boneSystem.selectBone(null);
+            this.ui.updateProperties();
+            this.ui.updateLayerList();
+            this.ui.updateBoneTree();
             this.viewport.render();
             return;
         }
@@ -734,6 +862,9 @@ class App {
         // Deselect all
         this.boneSystem.selectBone(null);
         this.imageManager.selectImage(null);
+        this.ui.updateProperties();
+        this.ui.updateBoneTree();
+        this.ui.updateLayerList();
         this.viewport.render();
     }
 
@@ -761,8 +892,12 @@ class App {
         if (image) {
             this._draggingImage = image;
             this.imageManager.selectImage(image);
+            this.boneSystem.selectBone(null);
             this._dragStartWorld = { x: wx, y: wy };
             this._dragImageStart = { x: image.x, y: image.y };
+            this.ui.updateProperties();
+            this.ui.updateLayerList();
+            this.ui.updateBoneTree();
             return;
         }
     }
@@ -788,21 +923,9 @@ class App {
             return;
         }
 
-        // Image dragging
+        // Image dragging (always in world space — boneName is organizational)
         if (this._draggingImage) {
             const img = this._draggingImage;
-            // If bound to a bone, convert world delta to bone-local delta
-            if (img.boneName) {
-                const bone = this.boneSystem.getBoneByName(img.boneName);
-                if (bone) {
-                    const pRad = -bone.worldRotation * Math.PI / 180;
-                    img.x = this._dragImageStart.x + dwx * Math.cos(pRad) - dwy * Math.sin(pRad);
-                    img.y = this._dragImageStart.y + dwx * Math.sin(pRad) + dwy * Math.cos(pRad);
-                    this.viewport.render();
-                    bus.emit('images:changed');
-                    return;
-                }
-            }
             img.x = this._dragImageStart.x + dwx;
             img.y = this._dragImageStart.y + dwy;
             this.viewport.render();
@@ -812,28 +935,61 @@ class App {
 
     _handleRotateStart(wx, wy) {
         const threshold = 10 / this.viewport.camera.zoom;
+
+        // Try bone first
         const bone = this.boneSystem.findBoneAt(wx, wy, threshold) || this.boneSystem.selectedBone;
-        if (!bone) return;
+        if (bone) {
+            this._rotatingBone = bone;
+            this._rotatingImage = null;
+            this.boneSystem.selectBone(bone);
+            this._rotateStartRotation = bone.rotation;
+            this._rotateStartAngle = Math.atan2(wy - bone.worldY, wx - bone.worldX);
+            return;
+        }
 
-        this._rotatingBone = bone;
-        this.boneSystem.selectBone(bone);
-        this._rotateStartRotation = bone.rotation;
-
-        // Angle from bone's world position to mouse
-        this._rotateStartAngle = Math.atan2(wy - bone.worldY, wx - bone.worldX);
+        // Try image
+        const image = this.imageManager.findImageAt(wx, wy, this.boneSystem);
+        if (image) {
+            this._rotatingImage = image;
+            this._rotatingBone = null;
+            this.imageManager.selectImage(image);
+            this.boneSystem.selectBone(null);
+            this._rotateStartRotation = image.rotation || 0;
+            // Compute image center in world space
+            const cx = image.x + (image.width * image.scaleX) / 2;
+            const cy = image.y + (image.height * image.scaleY) / 2;
+            this._rotateImageCenter = { x: cx, y: cy };
+            this._rotateStartAngle = Math.atan2(wy - cy, wx - cx);
+            this.ui.updateProperties();
+            this.ui.updateLayerList();
+            this.ui.updateBoneTree();
+        }
     }
 
     _handleRotateDrag(wx, wy) {
-        const bone = this._rotatingBone;
-        if (!bone) return;
+        // Bone rotation
+        if (this._rotatingBone) {
+            const bone = this._rotatingBone;
+            const currentAngle = Math.atan2(wy - bone.worldY, wx - bone.worldX);
+            const deltaAngle = (currentAngle - this._rotateStartAngle) * 180 / Math.PI;
+            bone.rotation = this._rotateStartRotation + deltaAngle;
+            this.boneSystem.updateWorldTransforms();
+            this.viewport.render();
+            bus.emit('bones:changed');
+            return;
+        }
 
-        const currentAngle = Math.atan2(wy - bone.worldY, wx - bone.worldX);
-        const deltaAngle = (currentAngle - this._rotateStartAngle) * 180 / Math.PI;
-        bone.rotation = this._rotateStartRotation + deltaAngle;
-
-        this.boneSystem.updateWorldTransforms();
-        this.viewport.render();
-        bus.emit('bones:changed');
+        // Image rotation
+        if (this._rotatingImage) {
+            const img = this._rotatingImage;
+            const cx = this._rotateImageCenter.x;
+            const cy = this._rotateImageCenter.y;
+            const currentAngle = Math.atan2(wy - cy, wx - cx);
+            const deltaAngle = (currentAngle - this._rotateStartAngle) * 180 / Math.PI;
+            img.rotation = this._rotateStartRotation + deltaAngle;
+            this.viewport.render();
+            bus.emit('images:changed');
+        }
     }
 
     // -------- Keyboard --------

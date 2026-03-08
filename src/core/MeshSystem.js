@@ -176,35 +176,29 @@ export default class MeshSystem {
      * @param {object} mesh - Mesh data
      * @param {object} image - Image entry (for position offset)
      * @param {number} maxBones - Max bones per vertex (default 4)
+     * @param {string[]|null} allowedBones - If provided, only these bone names participate in weighting
      */
-    autoComputeWeights(mesh, image, maxBones = 4) {
-        const bones = this.boneSystem.bones;
+    autoComputeWeights(mesh, image, maxBones = 4, allowedBones = null) {
+        const allBones = this.boneSystem.bones;
+        if (allBones.length === 0) return;
+
+        // Filter to only allowed bones if specified
+        const bones = allowedBones
+            ? allBones.filter(b => allowedBones.includes(b.name))
+            : allBones;
         if (bones.length === 0) return;
 
-        // Get the image's primary bone for coordinate transforms
-        const primaryBone = image.boneName ? this.boneSystem.getBoneByName(image.boneName) : null;
-
         // Pre-compute each vertex's world position at bind time
+        // boneName is organizational only — always use direct world coords
         const vertexWorldPositions = [];
 
         for (let vi = 0; vi < mesh.vertices.length; vi++) {
             const vert = mesh.vertices[vi];
-            const localX = image.x + vert.x;
-            const localY = image.y + vert.y;
-
-            let wx, wy;
-            if (primaryBone) {
-                // Transform from image-local (bone-local) to world space
-                const rad = primaryBone.worldRotation * Math.PI / 180;
-                wx = primaryBone.worldX + localX * Math.cos(rad) - localY * Math.sin(rad);
-                wy = primaryBone.worldY + localX * Math.sin(rad) + localY * Math.cos(rad);
-            } else {
-                wx = localX;
-                wy = localY;
-            }
+            const wx = image.x + vert.x;
+            const wy = image.y + vert.y;
             vertexWorldPositions.push({ x: wx, y: wy });
 
-            // Calculate distance to each bone in WORLD space
+            // Calculate distance to each allowed bone in WORLD space
             const distances = [];
             for (const bone of bones) {
                 const bx = bone.worldX;
@@ -246,9 +240,9 @@ export default class MeshSystem {
             mesh.weights[vi] = normalizedWeights;
         }
 
-        // Store bind-pose: bone transforms + vertex world positions
+        // Store bind-pose: ALL bone transforms (not just filtered)
         mesh.bindPose = {};
-        for (const bone of bones) {
+        for (const bone of allBones) {
             mesh.bindPose[bone.name] = {
                 worldX: bone.worldX,
                 worldY: bone.worldY,
@@ -308,8 +302,8 @@ export default class MeshSystem {
         const bindVerts = mesh.bindVertexWorldPositions;
         const result = [];
 
-        // Fallback: if no bind vertex data, compute world positions from primary bone
-        const primaryBone = image.boneName ? boneMap[image.boneName] : null;
+        // Fallback: if no bind vertex data, use world coords directly
+        // boneName is organizational only — never apply bone transforms
 
         for (let vi = 0; vi < mesh.vertices.length; vi++) {
             const vert = mesh.vertices[vi];
@@ -321,17 +315,9 @@ export default class MeshSystem {
                 vertBindWorldX = bindVerts[vi].x;
                 vertBindWorldY = bindVerts[vi].y;
             } else {
-                // Fallback: compute from primary bone
-                const localX = image.x + vert.x;
-                const localY = image.y + vert.y;
-                if (primaryBone) {
-                    const rad = primaryBone.worldRotation * Math.PI / 180;
-                    vertBindWorldX = primaryBone.worldX + localX * Math.cos(rad) - localY * Math.sin(rad);
-                    vertBindWorldY = primaryBone.worldY + localX * Math.sin(rad) + localY * Math.cos(rad);
-                } else {
-                    vertBindWorldX = localX;
-                    vertBindWorldY = localY;
-                }
+                // Direct world position — no bone transform (boneName is organizational only)
+                vertBindWorldX = image.x + vert.x;
+                vertBindWorldY = image.y + vert.y;
             }
 
             let worldX = 0, worldY = 0;
@@ -532,15 +518,10 @@ export default class MeshSystem {
         if (!mesh) return;
 
         const zoom = viewport.camera.zoom;
-        const bone = image.boneName ? this.boneSystem.getBoneByName(image.boneName) : null;
 
         ctx.save();
 
-        // Apply bone transform if bound
-        if (bone) {
-            ctx.translate(bone.worldX, bone.worldY);
-            ctx.rotate(bone.worldRotation * Math.PI / 180);
-        }
+        // boneName is organizational only — no bone transform applied
 
         // Get bone color map
         const boneColors = {};

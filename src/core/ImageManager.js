@@ -91,6 +91,99 @@ export default class ImageManager {
         bus.emit('images:changed');
     }
 
+    /**
+     * Trim an image to its non-transparent content area.
+     * Scans the alpha channel to find the bounding box of visible pixels,
+     * then crops the image and updates position/size.
+     * @param {object} entry - Image entry to trim
+     * @returns {boolean} true if trimmed, false if nothing to trim
+     */
+    trimToContent(entry) {
+        const img = entry.img;
+        if (!img) return false;
+
+        const w = img.naturalWidth || img.width;
+        const h = img.naturalHeight || img.height;
+        if (w === 0 || h === 0) return false;
+
+        // Draw to temp canvas to read pixels
+        const scanCanvas = document.createElement('canvas');
+        scanCanvas.width = w;
+        scanCanvas.height = h;
+        const scanCtx = scanCanvas.getContext('2d');
+        scanCtx.drawImage(img, 0, 0);
+        const data = scanCtx.getImageData(0, 0, w, h).data;
+
+        // Find bounding box of non-transparent pixels
+        let minX = w, minY = h, maxX = 0, maxY = 0;
+        let found = false;
+
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                const alpha = data[(y * w + x) * 4 + 3];
+                if (alpha > 5) { // threshold to ignore near-zero alpha
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                    found = true;
+                }
+            }
+        }
+
+        if (!found) return false;
+
+        const cropW = maxX - minX + 1;
+        const cropH = maxY - minY + 1;
+
+        // Skip if already tight (less than 2px margin)
+        if (minX <= 1 && minY <= 1 && cropW >= w - 2 && cropH >= h - 2) return false;
+
+        // Create cropped canvas
+        const cropCanvas = document.createElement('canvas');
+        cropCanvas.width = cropW;
+        cropCanvas.height = cropH;
+        const cropCtx = cropCanvas.getContext('2d');
+        cropCtx.drawImage(img, minX, minY, cropW, cropH, 0, 0, cropW, cropH);
+
+        // Use the canvas directly as the drawable (works with ctx.drawImage)
+        // This avoids async Image load issues
+        cropCanvas.naturalWidth = cropW;
+        cropCanvas.naturalHeight = cropH;
+
+        // Store original bounds (pre-trim) for consistent auto-rig compositing
+        if (!entry._originalBounds) {
+            entry._originalBounds = {
+                x: entry.x,
+                y: entry.y,
+                width: entry.width,
+                height: entry.height
+            };
+        }
+
+        // Update position: shift by trim offset (in world space)
+        entry.x += minX * entry.scaleX;
+        entry.y += minY * entry.scaleY;
+        entry.width = cropW;
+        entry.height = cropH;
+        entry.img = cropCanvas;
+
+        bus.emit('images:changed');
+        return true;
+    }
+
+    /**
+     * Trim all images to their non-transparent content.
+     * @returns {number} Number of images trimmed
+     */
+    trimAllToContent() {
+        let count = 0;
+        for (const img of this.images) {
+            if (this.trimToContent(img)) count++;
+        }
+        return count;
+    }
+
     reorder(fromIndex, toIndex) {
         const [item] = this.images.splice(fromIndex, 1);
         this.images.splice(toIndex, 0, item);
@@ -115,22 +208,30 @@ export default class ImageManager {
     }
 
     /**
-     * Get the effective world position of an image, considering bone binding.
+     * Get the effective world position of an image.
+     * Images always store world positions (boneName is organizational only).
      */
     _getImageWorldPos(entry, boneSystem) {
-        if (entry.boneName && boneSystem) {
-            const bone = boneSystem.getBoneByName(entry.boneName);
-            if (bone) {
-                const rad = bone.worldRotation * Math.PI / 180;
-                const cos = Math.cos(rad);
-                const sin = Math.sin(rad);
-                // Image x/y as local offset rotated by bone's world rotation
-                const ex = bone.worldX + entry.x * cos - entry.y * sin;
-                const ey = bone.worldY + entry.x * sin + entry.y * cos;
-                return { ex, ey, bone };
+        return { ex: entry.x, ey: entry.y, bone: null };
+    }
+
+    /**
+     * Hit-test: find which image is at world position (wx, wy).
+     * Tests from top (last rendered) to bottom.
+     */
+    hitTestImage(wx, wy) {
+        for (let i = this.images.length - 1; i >= 0; i--) {
+            const img = this.images[i];
+            if (!img.visible) continue;
+            const x = img.x;
+            const y = img.y;
+            const w = img.width * img.scaleX;
+            const h = img.height * img.scaleY;
+            if (wx >= x && wx <= x + w && wy >= y && wy <= y + h) {
+                return img;
             }
         }
-        return { ex: entry.x, ey: entry.y, bone: null };
+        return null;
     }
 
     // -------- Rendering --------
@@ -142,68 +243,27 @@ export default class ImageManager {
             // If a weighted mesh exists for this image, use mesh-deformed rendering
             if (meshSystem && meshSystem.renderMeshDeformed(ctx, entry)) {
                 // Mesh rendered — draw selection outline in world space
-                if (entry === this.selectedImage && entry.boneName && boneSystem) {
-                    const bone = boneSystem.getBoneByName(entry.boneName);
-                    if (bone) {
-                        const zoom = viewport.camera.zoom;
-                        ctx.save();
-                        ctx.translate(bone.worldX, bone.worldY);
-                        ctx.rotate(bone.worldRotation * Math.PI / 180);
-                        ctx.strokeStyle = '#4f9cf7';
-                        ctx.lineWidth = 1.5 / zoom;
-                        ctx.setLineDash([5 / zoom, 3 / zoom]);
-                        ctx.strokeRect(entry.x, entry.y,
-                            entry.width * entry.scaleX,
-                            entry.height * entry.scaleY);
-                        ctx.setLineDash([]);
-                        ctx.restore();
-                    }
+                if (entry === this.selectedImage) {
+                    const zoom = viewport.camera.zoom;
+                    ctx.save();
+                    ctx.strokeStyle = '#4f9cf7';
+                    ctx.lineWidth = 1.5 / zoom;
+                    ctx.setLineDash([5 / zoom, 3 / zoom]);
+                    ctx.strokeRect(entry.x, entry.y,
+                        entry.width * entry.scaleX,
+                        entry.height * entry.scaleY);
+                    ctx.setLineDash([]);
+                    ctx.restore();
                 }
                 continue;
             }
 
+            // Render image at world position
             ctx.save();
             ctx.globalAlpha = entry.opacity;
-
-            if (entry.boneName && boneSystem) {
-                const bone = boneSystem.getBoneByName(entry.boneName);
-                if (bone) {
-                    // Apply bone world transform as base
-                    const boneRad = bone.worldRotation * Math.PI / 180;
-                    ctx.translate(bone.worldX, bone.worldY);
-                    ctx.rotate(boneRad);
-
-                    // Image position as local offset from bone
-                    ctx.translate(entry.x + (entry.width * entry.scaleX) / 2,
-                        entry.y + (entry.height * entry.scaleY) / 2);
-                    ctx.rotate(entry.rotation * Math.PI / 180);
-                    ctx.scale(entry.scaleX, entry.scaleY);
-                    ctx.drawImage(entry.img, -entry.width / 2, -entry.height / 2);
-                    ctx.restore();
-
-                    // Selection outline (in bone-transformed space)
-                    if (entry === this.selectedImage) {
-                        const zoom = viewport.camera.zoom;
-                        ctx.save();
-                        ctx.translate(bone.worldX, bone.worldY);
-                        ctx.rotate(boneRad);
-                        ctx.strokeStyle = '#4f9cf7';
-                        ctx.lineWidth = 1.5 / zoom;
-                        ctx.setLineDash([5 / zoom, 3 / zoom]);
-                        ctx.strokeRect(entry.x, entry.y,
-                            entry.width * entry.scaleX,
-                            entry.height * entry.scaleY);
-                        ctx.setLineDash([]);
-                        ctx.restore();
-                    }
-                    continue;
-                }
-            }
-
-            // Unbound image — render at absolute position
             ctx.translate(entry.x + (entry.width * entry.scaleX) / 2,
                 entry.y + (entry.height * entry.scaleY) / 2);
-            ctx.rotate(entry.rotation * Math.PI / 180);
+            ctx.rotate((entry.rotation || 0) * Math.PI / 180);
             ctx.scale(entry.scaleX, entry.scaleY);
             ctx.drawImage(entry.img, -entry.width / 2, -entry.height / 2);
             ctx.restore();

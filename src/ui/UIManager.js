@@ -32,25 +32,53 @@ export default class UIManager {
 
     updateBoneTree() {
         const container = document.getElementById('bone-tree');
-        const { boneSystem } = this.app;
+        const { boneSystem, imageManager } = this.app;
 
         if (boneSystem.bones.length === 0) {
             container.innerHTML = '<div class="empty-state">No bones yet. Use the Bone tool (B) to create bones.</div>';
             return;
         }
 
+        // Build a map: boneName → [images bound to it]
+        const boneImageMap = {};
+        const unboundImages = [];
+        for (const img of imageManager.images) {
+            if (img.boneName) {
+                if (!boneImageMap[img.boneName]) boneImageMap[img.boneName] = [];
+                boneImageMap[img.boneName].push(img);
+            } else {
+                unboundImages.push(img);
+            }
+        }
+
         let html = '';
         const renderBone = (bone, depth) => {
             const isSelected = bone === boneSystem.selectedBone;
             const hasChildren = bone.children.length > 0;
+            const boundImages = boneImageMap[bone.name] || [];
+            const hasContent = hasChildren || boundImages.length > 0;
             const boneColor = bone.color || '#c8d850';
             html += `<div class="tree-item ${isSelected ? 'selected' : ''}" 
                     data-bone-id="${bone.id}" 
                     style="--depth: ${depth}; --bone-item-color: ${boneColor}; border-left: 3px solid ${isSelected ? boneColor : 'transparent'};">
-        <span class="tree-toggle ${hasChildren ? '' : 'invisible'}">▼</span>
+        <span class="tree-toggle ${hasContent ? '' : 'invisible'}">▼</span>
         <span class="bone-dot" style="background: ${boneColor};"></span>
         <span class="tree-label" style="color: ${isSelected ? boneColor : ''};">${bone.name}</span>
+        ${boundImages.length > 0 ? `<span class="bone-img-count">${boundImages.length}🖼</span>` : ''}
       </div>`;
+
+            // Render images bound to this bone
+            for (const img of boundImages) {
+                const isImgSelected = img === imageManager.selectedImage;
+                html += `<div class="tree-item tree-image-item ${isImgSelected ? 'selected' : ''}" 
+                        data-image-id="${img.id}"
+                        style="--depth: ${depth + 1}; border-left: 3px solid ${isImgSelected ? '#4f9cf7' : 'transparent'};">
+            <span class="tree-toggle invisible"></span>
+            <span class="tree-img-icon">🖼</span>
+            <span class="tree-label" style="color: ${isImgSelected ? '#4f9cf7' : 'var(--text-muted)'}; font-size: var(--font-size-xs);">${img.name}</span>
+          </div>`;
+            }
+
             for (const child of bone.children) {
                 renderBone(child, depth + 1);
             }
@@ -60,10 +88,28 @@ export default class UIManager {
             renderBone(root, 0);
         }
 
+        // Show unbound images at end
+        if (unboundImages.length > 0) {
+            html += `<div class="tree-item" style="--depth: 0; opacity: 0.5; pointer-events:none;">
+        <span class="tree-toggle invisible"></span>
+        <span class="tree-label" style="font-style:italic; color:var(--text-muted);">Unbound Images</span>
+      </div>`;
+            for (const img of unboundImages) {
+                const isImgSelected = img === imageManager.selectedImage;
+                html += `<div class="tree-item tree-image-item ${isImgSelected ? 'selected' : ''}" 
+                        data-image-id="${img.id}"
+                        style="--depth: 1; border-left: 3px solid ${isImgSelected ? '#4f9cf7' : 'transparent'};">
+            <span class="tree-toggle invisible"></span>
+            <span class="tree-img-icon">🖼</span>
+            <span class="tree-label" style="color: ${isImgSelected ? '#4f9cf7' : 'var(--text-muted)'}; font-size: var(--font-size-xs);">${img.name}</span>
+          </div>`;
+            }
+        }
+
         container.innerHTML = html;
 
-        // Click handlers
-        container.querySelectorAll('.tree-item').forEach(el => {
+        // Click handlers for bones
+        container.querySelectorAll('.tree-item[data-bone-id]').forEach(el => {
             el.addEventListener('click', () => {
                 const id = parseInt(el.dataset.boneId);
                 const bone = boneSystem.bones.find(b => b.id === id);
@@ -80,6 +126,20 @@ export default class UIManager {
                     boneSystem.selectBone(bone);
                     this._showBoneContextMenu(e.clientX, e.clientY, bone);
                 }
+            });
+        });
+
+        // Click handlers for images in the tree
+        container.querySelectorAll('.tree-image-item[data-image-id]').forEach(el => {
+            el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const id = parseInt(el.dataset.imageId);
+                const img = imageManager.images.find(i => i.id === id);
+                if (img) {
+                    imageManager.selectImage(img);
+                    this.updateProperties();
+                }
+                this.app.viewport.render();
             });
         });
     }
@@ -166,8 +226,9 @@ export default class UIManager {
         let html = '';
         for (const img of imageManager.images) {
             const isSelected = img === imageManager.selectedImage;
+            const thumbSrc = img.img.src || (img.img.toDataURL ? img.img.toDataURL('image/png') : '');
             html += `<div class="layer-item ${isSelected ? 'selected' : ''}" data-image-id="${img.id}">
-        <img class="layer-thumb" src="${img.img.src}" alt="${img.name}" />
+        <img class="layer-thumb" src="${thumbSrc}" alt="${img.name}" />
         <span class="layer-name">${img.name}</span>
         <button class="layer-visibility ${img.visible ? '' : 'hidden'}" 
                 data-image-id="${img.id}" title="Toggle Visibility">
@@ -270,6 +331,12 @@ export default class UIManager {
             this._bindPropNumber('prop-bone-scaley', (v) => { bone.scaleY = v; this._refreshBones(); });
 
         } else if (image) {
+            // Build bone options for dropdown
+            const boneOptions = this.app.boneSystem.bones.map(b =>
+                `<option value="${b.name}" ${image.boneName === b.name ? 'selected' : ''}>${b.name}</option>`
+            ).join('');
+            const hasBones = this.app.boneSystem.bones.length > 0;
+
             container.innerHTML = `
         <div class="prop-group">
           <div class="prop-group-title">Image: ${image.name}</div>
@@ -298,8 +365,34 @@ export default class UIManager {
             </div>
           </div>
           <div class="prop-row">
+            <span class="prop-label">Rotation</span>
+            <input class="prop-input" id="prop-img-rotation" type="number" step="0.5" value="${(image.rotation || 0).toFixed(1)}" />
+          </div>
+          <div class="prop-row">
             <span class="prop-label">Opacity</span>
             <input class="prop-input" id="prop-img-opacity" type="number" step="0.05" min="0" max="1" value="${image.opacity}" />
+          </div>
+          ${hasBones ? `
+          <div class="prop-row" style="margin-top:8px">
+            <span class="prop-label">Bone</span>
+            <select class="prop-input" id="prop-img-bone" style="cursor:pointer">
+              <option value="" ${!image.boneName ? 'selected' : ''}>(none — all bones)</option>
+              ${boneOptions}
+            </select>
+          </div>
+          <div class="prop-row" style="justify-content:flex-end;margin-top:4px">
+            <button class="btn btn-sm" id="prop-img-recalc-weights" title="Recalculate mesh weights for this image">
+              🔄 Recalculate Weights
+            </button>
+          </div>
+          ` : ''}
+          <div class="prop-row" style="justify-content:flex-end;margin-top:8px">
+            <button class="btn btn-sm" id="prop-img-trim" title="Trim transparent area — crop to visible content">
+              ✂ Trim to Content
+            </button>
+            <button class="btn btn-sm" id="prop-img-trim-all" title="Trim all images to visible content" style="margin-left:4px">
+              ✂ Trim All
+            </button>
           </div>
         </div>`;
 
@@ -307,7 +400,58 @@ export default class UIManager {
             this._bindPropNumber('prop-img-y', (v) => { image.y = v; this.app.viewport.render(); });
             this._bindPropNumber('prop-img-sx', (v) => { image.scaleX = v; this.app.viewport.render(); });
             this._bindPropNumber('prop-img-sy', (v) => { image.scaleY = v; this.app.viewport.render(); });
+            this._bindPropNumber('prop-img-rotation', (v) => { image.rotation = v; this.app.viewport.render(); });
             this._bindPropNumber('prop-img-opacity', (v) => { image.opacity = v; this.app.viewport.render(); });
+
+            // Bone assignment handler
+            const boneSelect = document.getElementById('prop-img-bone');
+            if (boneSelect) {
+                boneSelect.addEventListener('change', () => {
+                    const boneName = boneSelect.value || null;
+                    image.boneName = boneName;
+                    // Recalculate weights with bone filter
+                    this._recalcImageWeights(image);
+                    this.app.viewport.render();
+                    this.updateSlotsList();
+                });
+            }
+
+            // Recalculate weights button
+            const recalcBtn = document.getElementById('prop-img-recalc-weights');
+            if (recalcBtn) {
+                recalcBtn.addEventListener('click', () => {
+                    this._recalcImageWeights(image);
+                    this.app.viewport.render();
+                    this.showToast('Weights recalculated', 'success');
+                });
+            }
+
+            // Trim button — crop this image to visible content
+            const trimBtn = document.getElementById('prop-img-trim');
+            if (trimBtn) {
+                trimBtn.addEventListener('click', () => {
+                    const trimmed = this.app.imageManager.trimToContent(image);
+                    if (trimmed) {
+                        this.updateProperties();
+                        this.app.viewport.render();
+                        this.showToast(`Trimmed "${image.name}" to ${image.width}×${image.height}`, 'success');
+                    } else {
+                        this.showToast('Image already tight — nothing to trim', 'info');
+                    }
+                });
+            }
+
+            // Trim All button
+            const trimAllBtn = document.getElementById('prop-img-trim-all');
+            if (trimAllBtn) {
+                trimAllBtn.addEventListener('click', () => {
+                    const count = this.app.imageManager.trimAllToContent();
+                    this.updateProperties();
+                    this.updateLayerList();
+                    this.app.viewport.render();
+                    this.showToast(`Trimmed ${count} images to content`, 'success');
+                });
+            }
 
         } else {
             container.innerHTML = '<div class="empty-state">Select a bone or image to view properties.</div>';
@@ -326,6 +470,31 @@ export default class UIManager {
         if (!el) return;
         el.addEventListener('change', () => callback(parseFloat(el.value) || 0));
         el.addEventListener('keydown', (e) => { if (e.key === 'Enter') el.blur(); });
+    }
+
+    _recalcImageWeights(image) {
+        const { meshSystem } = this.app;
+        let mesh = meshSystem.meshes.get(image.id);
+        if (!mesh) {
+            mesh = meshSystem.generateMesh(image, 5, 8);
+        }
+        // Get allowed bone names (assigned bone + descendants), or null for all
+        const allowedBones = image.boneName
+            ? this._getBoneAndDescendants(image.boneName)
+            : null;
+        meshSystem.autoComputeWeights(mesh, image, 4, allowedBones);
+    }
+
+    _getBoneAndDescendants(boneName) {
+        const bone = this.app.boneSystem.getBoneByName(boneName);
+        if (!bone) return null;
+        const result = [];
+        const collect = (b) => {
+            result.push(b.name);
+            for (const child of b.children) collect(child);
+        };
+        collect(bone);
+        return result;
     }
 
     _refreshBones() {

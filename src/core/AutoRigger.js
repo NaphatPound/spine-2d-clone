@@ -230,19 +230,56 @@ export default class AutoRigger {
 
     /**
      * Detect pose and enter preview mode (landmarks shown, no bones yet).
-     * Returns true if a pose was found.
+     * Composites ALL visible images for detection.
+     * @param {Object} imageManager - ImageManager instance with all images
+     * @returns {boolean} true if a pose was found
      */
-    async detectAndPreview(image) {
+    async detectAndPreview(imageManager) {
         await this._ensureLoaded();
+
+        const images = imageManager.images.filter(i => i.visible);
+        if (images.length === 0) {
+            bus.emit('toast', { message: 'No visible images to detect pose', type: 'warning' });
+            return false;
+        }
 
         bus.emit('toast', { message: 'Detecting pose…', type: 'info' });
 
-        // Draw to offscreen canvas for WebGL compatibility
+        // Compute bounding box of all visible images
+        // Use original (pre-trim) bounds if available for consistent compositing
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const img of images) {
+            const ob = img._originalBounds;
+            if (ob) {
+                // Use original bounds to maintain consistent canvas size
+                minX = Math.min(minX, ob.x);
+                minY = Math.min(minY, ob.y);
+                maxX = Math.max(maxX, ob.x + ob.width * img.scaleX);
+                maxY = Math.max(maxY, ob.y + ob.height * img.scaleY);
+            } else {
+                minX = Math.min(minX, img.x);
+                minY = Math.min(minY, img.y);
+                maxX = Math.max(maxX, img.x + img.width * img.scaleX);
+                maxY = Math.max(maxY, img.y + img.height * img.scaleY);
+            }
+        }
+        const compositeW = Math.ceil(maxX - minX);
+        const compositeH = Math.ceil(maxY - minY);
+
+        // Composite all visible images onto one offscreen canvas
         const offCanvas = document.createElement('canvas');
-        offCanvas.width = image.img.naturalWidth || image.img.width;
-        offCanvas.height = image.img.naturalHeight || image.img.height;
+        offCanvas.width = compositeW;
+        offCanvas.height = compositeH;
         const offCtx = offCanvas.getContext('2d');
-        offCtx.drawImage(image.img, 0, 0);
+
+        for (const img of images) {
+            offCtx.save();
+            offCtx.globalAlpha = img.opacity;
+            const dx = img.x - minX;
+            const dy = img.y - minY;
+            offCtx.drawImage(img.img, dx, dy, img.width * img.scaleX, img.height * img.scaleY);
+            offCtx.restore();
+        }
 
         const result = this._poseLandmarker.detect(offCanvas);
 
@@ -251,9 +288,14 @@ export default class AutoRigger {
             return false;
         }
 
-        // Store preview data
+        // Store preview data — use a virtual image bounds for coordinate mapping
         this.previewLandmarks = result.landmarks[0];
-        this.previewImage = image;
+        this.previewImage = {
+            x: minX,
+            y: minY,
+            width: compositeW,
+            height: compositeH,
+        };
         this.previewActive = true;
 
         bus.emit('toast', { message: 'Pose detected! Review and click Apply or press Enter', type: 'success' });
