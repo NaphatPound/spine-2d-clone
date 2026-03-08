@@ -52,6 +52,19 @@ export default class ImageManager {
         });
     }
 
+    /**
+     * Add a pre-built image entry (e.g. from PSD import).
+     * @param {Object} entry - Image entry with id, name, img, width, height, x, y, etc.
+     */
+    addImageEntry(entry) {
+        // Ensure unique ID
+        entry.id = ++imageIdCounter;
+        this.images.push(entry);
+        bus.emit('images:changed');
+        bus.emit('images:added', entry);
+        return entry;
+    }
+
     removeImage(entry) {
         this.images = this.images.filter(i => i !== entry);
         if (this.selectedImage === entry) {

@@ -13,6 +13,7 @@ import MeshSystem from './core/MeshSystem.js';
 import SpineExporter from './export/SpineExporter.js';
 import UIManager from './ui/UIManager.js';
 import Timeline from './ui/Timeline.js';
+import { importPsd } from './core/PsdImporter.js';
 import { bus } from './core/EventBus.js';
 
 class App {
@@ -990,6 +991,24 @@ class App {
     async importFiles(files) {
         let count = 0;
         for (const file of files) {
+            // Handle PSD files
+            if (file.name.toLowerCase().endsWith('.psd')) {
+                try {
+                    this.ui.showToast(`Importing PSD: ${file.name}...`, 'info');
+                    const entries = await importPsd(file);
+                    for (const entry of entries) {
+                        this.imageManager.addImageEntry(entry);
+                        count++;
+                    }
+                    this.ui.showToast(`Imported ${entries.length} layer${entries.length > 1 ? 's' : ''} from ${file.name}`, 'success');
+                } catch (err) {
+                    console.error('PSD import error:', err);
+                    this.ui.showToast(`Failed to import PSD: ${file.name}`, 'error');
+                }
+                continue;
+            }
+
+            // Handle regular image files
             if (file.type.startsWith('image/')) {
                 try {
                     await this.imageManager.addImage(file);
@@ -1002,8 +1021,6 @@ class App {
         }
 
         if (count > 0) {
-            this.ui.showToast(`Imported ${count} image${count > 1 ? 's' : ''}`, 'success');
-
             // Zoom to fit the imported images
             const bounds = this.imageManager.getBounds(this.boneSystem);
             if (bounds) this.viewport.zoomToFit(bounds);
