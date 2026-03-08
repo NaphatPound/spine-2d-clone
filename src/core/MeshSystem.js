@@ -18,59 +18,156 @@ export default class MeshSystem {
 
     /**
      * Auto-generate a grid mesh over an image.
+     * Scans alpha channel to skip grid cells in fully transparent areas.
      * @param {object} image - Image entry from ImageManager
      * @param {number} cols - Grid columns (default 4)
      * @param {number} rows - Grid rows (default 6)
      */
     generateMesh(image, cols = 4, rows = 6) {
-        const vertices = [];
-        const uvs = [];
-        const triangles = [];
+        // Scan which grid cells contain visible (non-transparent) pixels
+        const cellVisible = this._scanCellAlpha(image, cols, rows);
 
-        // Create grid vertices
+        // Create all grid vertices
+        const allVerts = [];
+        const allUvs = [];
+        const stride = cols + 1;
+
         for (let r = 0; r <= rows; r++) {
             for (let c = 0; c <= cols; c++) {
                 const u = c / cols;
                 const v = r / rows;
-                // Local position relative to image origin
-                const x = u * image.width;
-                const y = v * image.height;
-                vertices.push({ x, y });
-                uvs.push({ u, v });
+                allVerts.push({ x: u * image.width, y: v * image.height });
+                allUvs.push({ u, v });
             }
         }
 
-        // Create triangles (two per grid cell)
-        const stride = cols + 1;
+        // Collect triangles only for cells with visible pixels
+        const rawTriangles = [];
+        const usedSet = new Set();
+
         for (let r = 0; r < rows; r++) {
             for (let c = 0; c < cols; c++) {
+                if (!cellVisible[r * cols + c]) continue;
+
                 const tl = r * stride + c;
                 const tr = tl + 1;
                 const bl = (r + 1) * stride + c;
                 const br = bl + 1;
-                triangles.push([tl, bl, tr]);
-                triangles.push([tr, bl, br]);
+
+                rawTriangles.push([tl, bl, tr]);
+                rawTriangles.push([tr, bl, br]);
+                usedSet.add(tl);
+                usedSet.add(tr);
+                usedSet.add(bl);
+                usedSet.add(br);
             }
         }
 
-        // Initialize empty bone weights
-        const weights = vertices.map(() => ({})); // { boneName: weight }
+        // Fallback: if nothing visible, use full rectangle
+        if (rawTriangles.length === 0) {
+            return this._generateFullRectMesh(image, cols, rows);
+        }
+
+        // Remap to only used vertices
+        const sortedUsed = Array.from(usedSet).sort((a, b) => a - b);
+        const remap = new Map();
+        const vertices = [];
+        const uvs = [];
+
+        for (let i = 0; i < sortedUsed.length; i++) {
+            const old = sortedUsed[i];
+            remap.set(old, i);
+            vertices.push(allVerts[old]);
+            uvs.push(allUvs[old]);
+        }
+
+        const triangles = rawTriangles.map(t => t.map(i => remap.get(i)));
+        const weights = vertices.map(() => ({}));
 
         const mesh = {
-            imageId: image.id,
-            vertices,
-            uvs,
-            triangles,
-            weights,
-            cols,
-            rows,
-            imageWidth: image.width,
-            imageHeight: image.height
+            imageId: image.id, vertices, uvs, triangles, weights,
+            cols, rows, imageWidth: image.width, imageHeight: image.height
         };
 
         this.meshes.set(image.id, mesh);
         bus.emit('mesh:created', { imageId: image.id });
         return mesh;
+    }
+
+    /**
+     * Full rectangle mesh (no alpha trimming). Used as fallback.
+     */
+    _generateFullRectMesh(image, cols, rows) {
+        const vertices = [], uvs = [], triangles = [];
+        const stride = cols + 1;
+        for (let r = 0; r <= rows; r++) {
+            for (let c = 0; c <= cols; c++) {
+                vertices.push({ x: (c / cols) * image.width, y: (r / rows) * image.height });
+                uvs.push({ u: c / cols, v: r / rows });
+            }
+        }
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                const tl = r * stride + c, tr = tl + 1;
+                const bl = (r + 1) * stride + c, br = bl + 1;
+                triangles.push([tl, bl, tr]);
+                triangles.push([tr, bl, br]);
+            }
+        }
+        const weights = vertices.map(() => ({}));
+        const mesh = {
+            imageId: image.id, vertices, uvs, triangles, weights,
+            cols, rows, imageWidth: image.width, imageHeight: image.height
+        };
+        this.meshes.set(image.id, mesh);
+        bus.emit('mesh:created', { imageId: image.id });
+        return mesh;
+    }
+
+    /**
+     * Scan image alpha to determine which grid cells have visible pixels.
+     * Returns boolean array: cellVisible[row * cols + col] = true if cell has opaque pixels.
+     */
+    _scanCellAlpha(image, cols, rows) {
+        const img = image.img;
+        const total = cols * rows;
+        // If no image element, treat all cells as visible
+        if (!img) return new Array(total).fill(true);
+
+        const w = img.naturalWidth || img.width;
+        const h = img.naturalHeight || img.height;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        const data = ctx.getImageData(0, 0, w, h).data;
+
+        const result = new Array(total).fill(false);
+
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                const x0 = Math.floor((c / cols) * w);
+                const y0 = Math.floor((r / rows) * h);
+                const x1 = Math.floor(((c + 1) / cols) * w);
+                const y1 = Math.floor(((r + 1) / rows) * h);
+
+                // Sample several points in this cell
+                const sx = Math.max(1, Math.floor((x1 - x0) / 3));
+                const sy = Math.max(1, Math.floor((y1 - y0) / 3));
+
+                let found = false;
+                for (let py = y0; py < y1 && !found; py += sy) {
+                    for (let px = x0; px < x1 && !found; px += sx) {
+                        if (data[(py * w + px) * 4 + 3] > 10) found = true;
+                    }
+                }
+                result[r * cols + c] = found;
+            }
+        }
+
+        return result;
     }
 
     /**
