@@ -67,6 +67,9 @@
         <button id="btn-auto-rig" class="tool-btn auto-rig-btn" title="Auto Rig with MediaPipe (detect pose)">
           🦴
         </button>
+        <button id="btn-mesh-edit" class="tool-btn mesh-edit-btn" title="Edit Mesh & Weights (M)">
+          🎨
+        </button>
       </div>
       <div class="toolbar-group toolbar-actions">
         <button id="btn-import" class="action-btn" title="Import Image">
@@ -136,6 +139,81 @@
           <button id="arb-cancel" class="arb-btn cancel">✕ Cancel</button>
           <span class="arb-hint">Enter to apply · Esc to cancel</span>
         </div>
+
+        <!-- Mesh Edit Toolbar (hidden by default) -->
+        <div id="weight-preview-bar" class="mesh-edit-bar" style="display:none;">
+          <span class="arb-icon">🎨</span>
+          <span class="arb-label">Mesh Editor</span>
+
+          <!-- Mode toggle -->
+          <div class="mesh-mode-toggle">
+            <button id="mesh-mode-select" class="mesh-mode-btn active" title="Select vertices">⬡ Select</button>
+            <button id="mesh-mode-paint" class="mesh-mode-btn" title="Paint weights">🖌 Paint</button>
+          </div>
+
+          <!-- Bone selector (paint mode) -->
+          <div id="mesh-paint-controls" class="mesh-paint-controls" style="display:none;">
+            <label class="mesh-ctrl-label">Bone:
+              <select id="mesh-active-bone" class="mesh-res-select" title="Active bone to paint">
+                <!-- Dynamically filled -->
+              </select>
+            </label>
+            <label class="mesh-ctrl-label">Size:
+              <input id="mesh-brush-size" type="range" class="mesh-brush-slider" min="5" max="200" value="40"
+                title="Brush radius">
+              <span id="mesh-brush-size-val" class="mesh-brush-val">40</span>
+            </label>
+            <label class="mesh-ctrl-label">Str:
+              <input id="mesh-brush-strength" type="range" class="mesh-brush-slider" min="1" max="100" value="30"
+                title="Brush strength">
+              <span id="mesh-brush-strength-val" class="mesh-brush-val">30</span>
+            </label>
+          </div>
+
+          <!-- Grid resolution -->
+          <div class="mesh-resolution-controls">
+            <label>Grid:
+              <select id="mesh-cols" class="mesh-res-select" title="Mesh columns">
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5" selected>5</option>
+                <option value="6">6</option>
+                <option value="8">8</option>
+                <option value="10">10</option>
+                <option value="12">12</option>
+                <option value="16">16</option>
+              </select>
+              ×
+              <select id="mesh-rows" class="mesh-res-select" title="Mesh rows">
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="6">6</option>
+                <option value="8" selected>8</option>
+                <option value="10">10</option>
+                <option value="12">12</option>
+                <option value="16">16</option>
+                <option value="20">20</option>
+              </select>
+            </label>
+          </div>
+
+          <button id="wpb-apply" class="arb-btn apply">✓ Apply</button>
+          <button id="wpb-cancel" class="arb-btn cancel">✕ Cancel</button>
+        </div>
+
+        <!-- Weight Editor Panel (hidden by default) -->
+        <div id="weight-editor-panel" class="weight-editor-panel" style="display:none;">
+          <div class="wep-header">
+            <span class="wep-title">Vertex Weights</span>
+            <span id="wep-vertex-id" class="wep-vertex-id">#0</span>
+          </div>
+          <div id="wep-sliders" class="wep-sliders">
+            <!-- Dynamically filled with bone weight sliders -->
+          </div>
+        </div>
+
         <div id="viewport-info" class="viewport-info">
           <span id="zoom-level">100%</span>
           <span id="cursor-pos">0, 0</span>

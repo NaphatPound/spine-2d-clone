@@ -77,6 +77,18 @@ export default class SlotSystem {
             const slot = this.addSlot(slotName, boneName, img.name);
             img.slotName = slotName;
             img.boneName = boneName;
+
+            // Convert image position from world-space to bone-local-space
+            // so that ImageManager.render() can apply bone world transform on top
+            if (nearestBone) {
+                const rad = -nearestBone.worldRotation * Math.PI / 180;
+                const cos = Math.cos(rad);
+                const sin = Math.sin(rad);
+                const dx = img.x - nearestBone.worldX;
+                const dy = img.y - nearestBone.worldY;
+                img.x = dx * cos - dy * sin;
+                img.y = dx * sin + dy * cos;
+            }
         }
         bus.emit('slots:changed');
     }

@@ -9,6 +9,7 @@ import SlotSystem from './core/SlotSystem.js';
 import CommandHistory from './core/CommandHistory.js';
 import AnimationSystem from './core/AnimationSystem.js';
 import AutoRigger from './core/AutoRigger.js';
+import MeshSystem from './core/MeshSystem.js';
 import SpineExporter from './export/SpineExporter.js';
 import UIManager from './ui/UIManager.js';
 import Timeline from './ui/Timeline.js';
@@ -30,6 +31,9 @@ class App {
 
         // Auto Rigger
         this.autoRigger = new AutoRigger(this.boneSystem);
+
+        // Mesh System
+        this.meshSystem = new MeshSystem(this.boneSystem);
 
         // Exporter (needs animSystem)
         this.exporter = new SpineExporter(this.boneSystem, this.slotSystem, this.imageManager, this.animSystem);
@@ -56,6 +60,18 @@ class App {
         this._rotateStartAngle = 0;
         this._rotateStartRotation = 0;
 
+        // Mesh edit state
+        this._meshEditMode = false;
+        this._meshSubMode = 'select'; // 'select' or 'paint'
+        this._meshActiveBone = null;
+        this._meshBrushRadius = 40;
+        this._meshBrushStrength = 30;
+        this._meshPainting = false;
+        this._meshBrushWorldPos = null; // for rendering brush circle
+        this._draggingVertex = false;
+        this._dragVertexIdx = -1;
+        this._dragVertexStart = null;
+
         this._setupRenderPipeline();
         this._setupToolbar();
         this._setupViewportInteractions();
@@ -78,12 +94,38 @@ class App {
     _setupRenderPipeline() {
         // Images are rendered first (bottom layer)
         this.viewport.onRender((ctx, vp) => {
-            this.imageManager.render(ctx, vp);
+            this.imageManager.render(ctx, vp, this.boneSystem, this.meshSystem);
         });
 
         // Auto-rig preview overlay (above images, below bones)
         this.viewport.onRender((ctx, vp) => {
             this.autoRigger.renderPreview(ctx, vp);
+        });
+
+        // Mesh weight preview overlay
+        this.viewport.onRender((ctx, vp) => {
+            if (this.meshSystem.weightPreviewActive) {
+                const img = this.imageManager.images.find(i => i.id === this.meshSystem.selectedMeshId);
+                if (img) this.meshSystem.renderWeightPreview(ctx, vp, img);
+            }
+
+            // Brush circle for paint mode
+            if (this._meshEditMode && this._meshSubMode === 'paint' && this._meshBrushWorldPos) {
+                const zoom = vp.camera.zoom;
+                ctx.save();
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+                ctx.lineWidth = 1.5 / zoom;
+                ctx.setLineDash([4 / zoom, 3 / zoom]);
+                ctx.beginPath();
+                ctx.arc(this._meshBrushWorldPos.x, this._meshBrushWorldPos.y, this._meshBrushRadius, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+                ctx.beginPath();
+                ctx.arc(this._meshBrushWorldPos.x, this._meshBrushWorldPos.y, 2 / zoom, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
         });
 
         // Bones rendered on top
@@ -107,7 +149,7 @@ class App {
 
         // Zoom to fit
         document.getElementById('btn-zoom-fit')?.addEventListener('click', () => {
-            const bounds = this.imageManager.getBounds();
+            const bounds = this.imageManager.getBounds(this.boneSystem);
             if (bounds) {
                 this.viewport.zoomToFit(bounds);
             } else {
@@ -128,6 +170,64 @@ class App {
         document.getElementById('arb-cancel')?.addEventListener('click', () => {
             this._cancelAutoRig();
         });
+
+        // Mesh Edit button
+        document.getElementById('btn-mesh-edit')?.addEventListener('click', () => {
+            if (this._meshEditMode) {
+                this._leaveMeshEditMode();
+            } else {
+                this._enterMeshEditMode();
+            }
+        });
+
+        // Weight preview bar buttons
+        document.getElementById('wpb-apply')?.addEventListener('click', () => {
+            this._applyWeights();
+        });
+        document.getElementById('wpb-cancel')?.addEventListener('click', () => {
+            this._cancelWeights();
+        });
+
+        // Mode toggle buttons
+        document.getElementById('mesh-mode-select')?.addEventListener('click', () => {
+            this._setMeshSubMode('select');
+        });
+        document.getElementById('mesh-mode-paint')?.addEventListener('click', () => {
+            this._setMeshSubMode('paint');
+        });
+
+        // Brush size slider
+        document.getElementById('mesh-brush-size')?.addEventListener('input', (e) => {
+            this._meshBrushRadius = parseInt(e.target.value);
+            document.getElementById('mesh-brush-size-val').textContent = e.target.value;
+        });
+        // Brush strength slider
+        document.getElementById('mesh-brush-strength')?.addEventListener('input', (e) => {
+            this._meshBrushStrength = parseInt(e.target.value);
+            document.getElementById('mesh-brush-strength-val').textContent = e.target.value;
+        });
+        // Active bone selector
+        document.getElementById('mesh-active-bone')?.addEventListener('change', (e) => {
+            this._meshActiveBone = e.target.value;
+        });
+
+        // Mesh resolution controls
+        const regenerateMeshes = () => {
+            const cols = parseInt(document.getElementById('mesh-cols')?.value || '5');
+            const rows = parseInt(document.getElementById('mesh-rows')?.value || '8');
+            for (const img of this.imageManager.images) {
+                this.meshSystem.removeMesh(img.id);
+                const mesh = this.meshSystem.generateMesh(img, cols, rows);
+                this.meshSystem.autoComputeWeights(mesh, img);
+            }
+            if (this.meshSystem.weightPreviewActive) {
+                this.meshSystem.selectedVertexIdx = -1;
+                document.getElementById('weight-editor-panel').style.display = 'none';
+            }
+            this.viewport.render();
+        };
+        document.getElementById('mesh-cols')?.addEventListener('change', regenerateMeshes);
+        document.getElementById('mesh-rows')?.addEventListener('change', regenerateMeshes);
     }
 
     async _startAutoRigPreview() {
@@ -149,7 +249,7 @@ class App {
                 // Show the preview bar
                 document.getElementById('autorig-preview-bar').style.display = 'flex';
                 // Zoom to fit the image
-                const bounds = this.imageManager.getBounds();
+                const bounds = this.imageManager.getBounds(this.boneSystem);
                 if (bounds) this.viewport.zoomToFit(bounds);
                 this.viewport.render();
             }
@@ -165,11 +265,25 @@ class App {
         const createdBones = this.autoRigger.applyPreview();
         if (!createdBones) return;
 
-        // Hide preview bar
+        // Hide auto-rig preview bar
         document.getElementById('autorig-preview-bar').style.display = 'none';
 
         // Auto-create slots mapping bones to the image
+        // (autoCreateSlots also converts image x/y to bone-local space)
         this.slotSystem.autoCreateSlots(this.boneSystem.bones, this.imageManager.images);
+
+        // Auto-generate mesh and weights for each image
+        for (const img of this.imageManager.images) {
+            const mesh = this.meshSystem.generateMesh(img, 5, 8);
+            this.meshSystem.autoComputeWeights(mesh, img);
+        }
+
+        // Show weight preview for the first image
+        if (this.imageManager.images.length > 0) {
+            const firstImg = this.imageManager.images[0];
+            this.meshSystem.startWeightPreview(firstImg.id);
+            document.getElementById('weight-preview-bar').style.display = '';
+        }
 
         // Update UI
         this.ui.updateBoneTree();
@@ -179,8 +293,22 @@ class App {
         this.viewport.render();
 
         // Zoom to fit
-        const bounds = this.imageManager.getBounds();
+        const bounds = this.imageManager.getBounds(this.boneSystem);
         if (bounds) this.viewport.zoomToFit(bounds);
+    }
+
+    _applyWeights() {
+        this._leaveMeshEditMode();
+        this.ui.showToast('Mesh weights applied', 'success');
+    }
+
+    _cancelWeights() {
+        // Remove all meshes
+        for (const img of this.imageManager.images) {
+            this.meshSystem.removeMesh(img.id);
+        }
+        this._leaveMeshEditMode();
+        this.ui.showToast('Mesh removed', 'info');
     }
 
     _cancelAutoRig() {
@@ -188,6 +316,141 @@ class App {
         document.getElementById('autorig-preview-bar').style.display = 'none';
         this.viewport.render();
         this.ui.showToast('Auto-rig cancelled', 'info');
+    }
+
+    // ========== MESH EDIT MODE ==========
+
+    _enterMeshEditMode() {
+        if (this.imageManager.images.length === 0) {
+            this.ui.showToast('No images to edit mesh', 'warning');
+            return;
+        }
+        if (this.boneSystem.bones.length === 0) {
+            this.ui.showToast('Create bones first', 'warning');
+            return;
+        }
+
+        this._meshEditMode = true;
+        document.getElementById('btn-mesh-edit')?.classList.add('active');
+
+        // Generate meshes if they don't exist
+        const cols = parseInt(document.getElementById('mesh-cols')?.value || '5');
+        const rows = parseInt(document.getElementById('mesh-rows')?.value || '8');
+        for (const img of this.imageManager.images) {
+            if (!this.meshSystem.getMesh(img.id)) {
+                const mesh = this.meshSystem.generateMesh(img, cols, rows);
+                this.meshSystem.autoComputeWeights(mesh, img);
+            }
+        }
+
+        // Start weight preview for the first image
+        const firstImg = this.imageManager.images[0];
+        this.meshSystem.startWeightPreview(firstImg.id);
+
+        // Show mesh edit bar
+        document.getElementById('weight-preview-bar').style.display = 'flex';
+        this._populateBoneSelector();
+        this._setMeshSubMode('select');
+        this.viewport.render();
+    }
+
+    _leaveMeshEditMode() {
+        this._meshEditMode = false;
+        this._meshPainting = false;
+        this._draggingVertex = false;
+        this._meshBrushWorldPos = null;
+        document.getElementById('btn-mesh-edit')?.classList.remove('active');
+        this.meshSystem.cancelWeightPreview();
+        document.getElementById('weight-preview-bar').style.display = 'none';
+        document.getElementById('weight-editor-panel').style.display = 'none';
+        this.viewport.render();
+    }
+
+    _setMeshSubMode(mode) {
+        this._meshSubMode = mode;
+        document.getElementById('mesh-mode-select')?.classList.toggle('active', mode === 'select');
+        document.getElementById('mesh-mode-paint')?.classList.toggle('active', mode === 'paint');
+        document.getElementById('mesh-paint-controls').style.display = mode === 'paint' ? 'flex' : 'none';
+
+        if (mode === 'paint') {
+            this.viewport.canvas.style.cursor = 'crosshair';
+        } else {
+            this.viewport.canvas.style.cursor = 'default';
+        }
+
+        // Hide weight editor when switching modes
+        if (mode !== 'select') {
+            document.getElementById('weight-editor-panel').style.display = 'none';
+        }
+    }
+
+    _populateBoneSelector() {
+        const select = document.getElementById('mesh-active-bone');
+        if (!select) return;
+        select.innerHTML = '';
+        for (const bone of this.boneSystem.bones) {
+            const opt = document.createElement('option');
+            opt.value = bone.name;
+            opt.textContent = bone.name;
+            opt.style.color = bone.color || '#c8d850';
+            select.appendChild(opt);
+        }
+        if (this.boneSystem.bones.length > 0) {
+            this._meshActiveBone = this.boneSystem.bones[0].name;
+        }
+    }
+
+    _updateWeightEditor() {
+        const panel = document.getElementById('weight-editor-panel');
+        const sliders = document.getElementById('wep-sliders');
+        const vertexLabel = document.getElementById('wep-vertex-id');
+
+        if (this.meshSystem.selectedVertexIdx < 0 || this.meshSystem.selectedMeshId < 0) {
+            panel.style.display = 'none';
+            return;
+        }
+
+        const mesh = this.meshSystem.getMesh(this.meshSystem.selectedMeshId);
+        if (!mesh) return;
+
+        panel.style.display = '';
+        vertexLabel.textContent = `#${this.meshSystem.selectedVertexIdx}`;
+
+        const weights = mesh.weights[this.meshSystem.selectedVertexIdx] || {};
+
+        // Build slider rows for all bones
+        let html = '';
+        for (const bone of this.boneSystem.bones) {
+            const w = weights[bone.name] || 0;
+            const color = bone.color || '#c8d850';
+            html += `<div class="wep-slider-row">
+                <span class="wep-bone-dot" style="background:${color}"></span>
+                <span class="wep-bone-name">${bone.name}</span>
+                <input type="range" class="wep-slider" min="0" max="100" step="1"
+                       value="${Math.round(w * 100)}"
+                       data-bone="${bone.name}"
+                       style="accent-color:${color}">
+                <span class="wep-weight-value">${(w * 100).toFixed(0)}%</span>
+            </div>`;
+        }
+        sliders.innerHTML = html;
+
+        // Attach slider event handlers
+        sliders.querySelectorAll('.wep-slider').forEach(slider => {
+            slider.addEventListener('input', (e) => {
+                const boneName = e.target.dataset.bone;
+                const newWeight = parseInt(e.target.value) / 100;
+                this.meshSystem.setVertexWeight(
+                    this.meshSystem.selectedMeshId,
+                    this.meshSystem.selectedVertexIdx,
+                    boneName, newWeight
+                );
+                // Update display
+                e.target.parentElement.querySelector('.wep-weight-value').textContent =
+                    `${e.target.value}%`;
+                this.viewport.render();
+            });
+        });
     }
 
     setTool(tool) {
@@ -214,6 +477,43 @@ class App {
         bus.on('viewport:mousedown', (data) => {
             const { wx, wy, button } = data;
             if (button !== 0) return; // left click only
+
+            // --- Weight preview: vertex selection / paint / vertex drag ---
+            if (this.meshSystem.weightPreviewActive && this._meshEditMode) {
+                const img = this.imageManager.images.find(i => i.id === this.meshSystem.selectedMeshId);
+                if (img) {
+                    // Paint mode
+                    if (this._meshSubMode === 'paint' && this._meshActiveBone) {
+                        this._meshPainting = true;
+                        this.meshSystem.paintWeight(
+                            img.id, wx, wy,
+                            this._meshActiveBone,
+                            this._meshBrushRadius,
+                            this._meshBrushStrength / 100,
+                            img
+                        );
+                        this.viewport.render();
+                        return;
+                    }
+
+                    // Select mode: try vertex click
+                    const idx = this.meshSystem.hitTestVertex(wx, wy, img, this.viewport.camera.zoom);
+                    if (idx >= 0) {
+                        this.meshSystem.selectedVertexIdx = idx;
+                        this._updateWeightEditor();
+                        // Start vertex drag
+                        this._draggingVertex = true;
+                        this._dragVertexIdx = idx;
+                        const mesh = this.meshSystem.getMesh(img.id);
+                        if (mesh) {
+                            this._dragVertexStart = { x: mesh.vertices[idx].x, y: mesh.vertices[idx].y };
+                        }
+                        this._dragStartWorld = { x: wx, y: wy };
+                        this.viewport.render();
+                        return;
+                    }
+                }
+            }
 
             // --- Auto-rig preview: intercept for landmark dragging ---
             if (this.autoRigger.previewActive) {
@@ -242,6 +542,51 @@ class App {
 
         bus.on('viewport:mousemove', (data) => {
             const { wx, wy } = data;
+
+            // --- Mesh edit: brush position + paint drag ---
+            if (this._meshEditMode) {
+                if (this._meshSubMode === 'paint') {
+                    this._meshBrushWorldPos = { x: wx, y: wy };
+                    if (this._meshPainting && this._meshActiveBone) {
+                        const img = this.imageManager.images.find(i => i.id === this.meshSystem.selectedMeshId);
+                        if (img) {
+                            this.meshSystem.paintWeight(
+                                img.id, wx, wy,
+                                this._meshActiveBone,
+                                this._meshBrushRadius,
+                                this._meshBrushStrength / 100,
+                                img
+                            );
+                        }
+                    }
+                    this.viewport.render();
+                    return;
+                }
+
+                // Vertex drag in select mode
+                if (this._draggingVertex && this._dragVertexIdx >= 0) {
+                    const img = this.imageManager.images.find(i => i.id === this.meshSystem.selectedMeshId);
+                    if (img) {
+                        const dwx = wx - this._dragStartWorld.x;
+                        const dwy = wy - this._dragStartWorld.y;
+                        // Convert world delta to bone-local delta
+                        let ldx = dwx, ldy = dwy;
+                        if (img.boneName) {
+                            const bone = this.boneSystem.getBoneByName(img.boneName);
+                            if (bone) {
+                                const pRad = -bone.worldRotation * Math.PI / 180;
+                                ldx = dwx * Math.cos(pRad) - dwy * Math.sin(pRad);
+                                ldy = dwx * Math.sin(pRad) + dwy * Math.cos(pRad);
+                            }
+                        }
+                        const newX = this._dragVertexStart.x + ldx;
+                        const newY = this._dragVertexStart.y + ldy;
+                        this.meshSystem.moveVertex(this.meshSystem.selectedMeshId, this._dragVertexIdx, newX, newY, img);
+                        this.viewport.render();
+                    }
+                    return;
+                }
+            }
 
             // --- Auto-rig preview: landmark drag ---
             if (this.autoRigger.previewActive) {
@@ -284,6 +629,16 @@ class App {
 
         bus.on('viewport:mouseup', (data) => {
             const { wx, wy } = data;
+
+            // --- Mesh edit: end paint / end vertex drag ---
+            if (this._meshPainting) {
+                this._meshPainting = false;
+            }
+            if (this._draggingVertex) {
+                this._draggingVertex = false;
+                this._dragVertexIdx = -1;
+                this._dragVertexStart = null;
+            }
 
             // --- Auto-rig preview: end landmark drag ---
             if (this.autoRigger.isDraggingLandmark) {
@@ -355,7 +710,7 @@ class App {
         }
 
         // Try selecting an image
-        const image = this.imageManager.findImageAt(wx, wy);
+        const image = this.imageManager.findImageAt(wx, wy, this.boneSystem);
         if (image) {
             this.imageManager.selectImage(image);
             this.boneSystem.selectBone(null);
@@ -389,7 +744,7 @@ class App {
         }
 
         // Try image
-        const image = this.imageManager.findImageAt(wx, wy);
+        const image = this.imageManager.findImageAt(wx, wy, this.boneSystem);
         if (image) {
             this._draggingImage = image;
             this.imageManager.selectImage(image);
@@ -422,8 +777,21 @@ class App {
 
         // Image dragging
         if (this._draggingImage) {
-            this._draggingImage.x = this._dragImageStart.x + dwx;
-            this._draggingImage.y = this._dragImageStart.y + dwy;
+            const img = this._draggingImage;
+            // If bound to a bone, convert world delta to bone-local delta
+            if (img.boneName) {
+                const bone = this.boneSystem.getBoneByName(img.boneName);
+                if (bone) {
+                    const pRad = -bone.worldRotation * Math.PI / 180;
+                    img.x = this._dragImageStart.x + dwx * Math.cos(pRad) - dwy * Math.sin(pRad);
+                    img.y = this._dragImageStart.y + dwx * Math.sin(pRad) + dwy * Math.cos(pRad);
+                    this.viewport.render();
+                    bus.emit('images:changed');
+                    return;
+                }
+            }
+            img.x = this._dragImageStart.x + dwx;
+            img.y = this._dragImageStart.y + dwy;
             this.viewport.render();
             bus.emit('images:changed');
         }
@@ -468,8 +836,12 @@ class App {
                 case 'g': this.setTool('move'); break;
                 case 'r': this.setTool('rotate'); break;
                 case 'h': this.setTool('pan'); break;
+                case 'm':
+                    if (this._meshEditMode) this._leaveMeshEditMode();
+                    else this._enterMeshEditMode();
+                    break;
                 case 'f':
-                    const bounds = this.imageManager.getBounds();
+                    const bounds = this.imageManager.getBounds(this.boneSystem);
                     if (bounds) this.viewport.zoomToFit(bounds);
                     break;
                 case 'delete':
@@ -480,6 +852,11 @@ class App {
                     }
                     break;
                 case 'escape':
+                    // Cancel mesh edit mode first if active
+                    if (this._meshEditMode) {
+                        this._leaveMeshEditMode();
+                        break;
+                    }
                     // Cancel auto-rig preview first if active
                     if (this.autoRigger.previewActive) {
                         this._cancelAutoRig();
@@ -491,6 +868,11 @@ class App {
                     this.viewport.render();
                     break;
                 case 'enter':
+                    // Apply weight preview
+                    if (this.meshSystem.weightPreviewActive) {
+                        this._applyWeights();
+                        break;
+                    }
                     // Apply auto-rig preview
                     if (this.autoRigger.previewActive) {
                         this._applyAutoRig();
@@ -600,7 +982,7 @@ class App {
             this.ui.showToast(`Imported ${count} image${count > 1 ? 's' : ''}`, 'success');
 
             // Zoom to fit the imported images
-            const bounds = this.imageManager.getBounds();
+            const bounds = this.imageManager.getBounds(this.boneSystem);
             if (bounds) this.viewport.zoomToFit(bounds);
             this.viewport.render();
         }
@@ -721,7 +1103,7 @@ class App {
             bus.emit('bones:changed');
             bus.emit('slots:changed');
 
-            const bounds = this.imageManager.getBounds();
+            const bounds = this.imageManager.getBounds(this.boneSystem);
             if (bounds) this.viewport.zoomToFit(bounds);
             this.viewport.render();
 

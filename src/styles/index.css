@@ -888,6 +888,163 @@ body {
   margin-left: 4px;
 }
 
+/* Mesh Resolution Controls */
+.mesh-resolution-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.mesh-resolution-controls label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.mesh-res-select {
+  height: 22px;
+  width: 48px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 0 2px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.mesh-res-select:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.mesh-res-select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-glow);
+}
+
+/* ========== Mesh Edit Toolbar ========== */
+.mesh-edit-bar {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: rgba(20, 24, 32, 0.92);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(79, 156, 247, 0.3);
+  border-radius: 10px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5), 0 0 20px rgba(79, 156, 247, 0.15);
+  z-index: 100;
+  animation: slideDown 0.3s ease-out;
+  flex-wrap: wrap;
+  max-width: 90%;
+}
+
+.mesh-edit-bar .arb-label {
+  color: #4f9cf7;
+}
+
+.mesh-mode-toggle {
+  display: flex;
+  gap: 2px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.mesh-mode-btn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.mesh-mode-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.mesh-mode-btn.active {
+  color: #4f9cf7;
+  background: rgba(79, 156, 247, 0.15);
+  border-color: rgba(79, 156, 247, 0.35);
+}
+
+.mesh-paint-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mesh-ctrl-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.mesh-brush-slider {
+  width: 60px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.mesh-brush-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #4f9cf7;
+  cursor: pointer;
+  box-shadow: 0 0 4px rgba(79, 156, 247, 0.4);
+}
+
+.mesh-brush-val {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-secondary);
+  min-width: 20px;
+  text-align: right;
+}
+
+/* Mesh Edit button active state */
+.mesh-edit-btn.active {
+  background: rgba(79, 156, 247, 0.2) !important;
+  border-color: rgba(79, 156, 247, 0.5) !important;
+  color: #4f9cf7 !important;
+  box-shadow: 0 0 10px rgba(79, 156, 247, 0.3);
+}
+
 /* ========== Timeline Panel ========== */
 .timeline-panel {
   display: flex;
@@ -1022,4 +1179,107 @@ body {
 
 .timeline-panel::before:hover {
   background: var(--accent);
+}
+
+/* ========== Weight Editor Panel ========== */
+.weight-editor-panel {
+  position: absolute;
+  bottom: 60px;
+  right: 16px;
+  width: 260px;
+  max-height: 320px;
+  background: rgba(22, 26, 35, 0.92);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+  z-index: 50;
+  font-family: var(--font-ui);
+}
+
+.wep-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.wep-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.wep-vertex-id {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.wep-sliders {
+  padding: 8px 14px;
+  overflow-y: auto;
+  max-height: 260px;
+}
+
+.wep-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.wep-slider-row:last-child {
+  border-bottom: none;
+}
+
+.wep-bone-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.wep-bone-name {
+  font-size: 11px;
+  color: var(--text-secondary);
+  min-width: 70px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wep-slider {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.wep-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.3);
+}
+
+.wep-weight-value {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  min-width: 32px;
+  text-align: right;
 }

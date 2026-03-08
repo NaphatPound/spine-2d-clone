@@ -148,6 +148,19 @@ export default class AutoRigger {
     }
 
     /**
+     * Check if WebGL is available in this browser.
+     */
+    _hasWebGL() {
+        try {
+            const canvas = document.createElement('canvas');
+            const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+            return !!gl;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    /**
      * Load MediaPipe PoseLandmarker from CDN (lazy, first-time only).
      */
     async _ensureLoaded() {
@@ -169,12 +182,15 @@ export default class AutoRigger {
                 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm'
             );
 
+            // Always use CPU delegate — MediaPipe's WASM WebGL context creation
+            // crashes the tab even when the browser supports WebGL.
+            // CPU is fast enough for single-image pose detection.
             this._poseLandmarker = await PoseLandmarker.createFromOptions(
                 filesetResolver,
                 {
                     baseOptions: {
                         modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
-                        delegate: 'GPU'
+                        delegate: 'CPU'
                     },
                     runningMode: 'IMAGE',
                     numPoses: 1
