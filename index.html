@@ -127,98 +127,127 @@
         </div>
       </aside>
 
-      <!-- Canvas Viewport -->
-      <main id="viewport-container" class="viewport-container">
-        <canvas id="viewport-canvas"></canvas>
+      <!-- Canvas Wrapper: Viewport + Timeline -->
+      <div class="canvas-wrapper">
+        <!-- Canvas Viewport -->
+        <main id="viewport-container" class="viewport-container">
+          <canvas id="viewport-canvas"></canvas>
 
-        <!-- Auto-Rig Preview Bar (hidden by default) -->
-        <div id="autorig-preview-bar" class="autorig-preview-bar" style="display:none;">
-          <span class="arb-icon">🦴</span>
-          <span class="arb-label">Pose Preview</span>
-          <button id="arb-apply" class="arb-btn apply">✓ Apply Rig</button>
-          <button id="arb-cancel" class="arb-btn cancel">✕ Cancel</button>
-          <span class="arb-hint">Enter to apply · Esc to cancel</span>
-        </div>
-
-        <!-- Mesh Edit Toolbar (hidden by default) -->
-        <div id="weight-preview-bar" class="mesh-edit-bar" style="display:none;">
-          <span class="arb-icon">🎨</span>
-          <span class="arb-label">Mesh Editor</span>
-
-          <!-- Mode toggle -->
-          <div class="mesh-mode-toggle">
-            <button id="mesh-mode-select" class="mesh-mode-btn active" title="Select vertices">⬡ Select</button>
-            <button id="mesh-mode-paint" class="mesh-mode-btn" title="Paint weights">🖌 Paint</button>
+          <!-- Auto-Rig Preview Bar (hidden by default) -->
+          <div id="autorig-preview-bar" class="autorig-preview-bar" style="display:none;">
+            <span class="arb-icon">🦴</span>
+            <span class="arb-label">Pose Preview</span>
+            <button id="arb-apply" class="arb-btn apply">✓ Apply Rig</button>
+            <button id="arb-cancel" class="arb-btn cancel">✕ Cancel</button>
+            <span class="arb-hint">Enter to apply · Esc to cancel</span>
           </div>
 
-          <!-- Bone selector (paint mode) -->
-          <div id="mesh-paint-controls" class="mesh-paint-controls" style="display:none;">
-            <label class="mesh-ctrl-label">Bone:
-              <select id="mesh-active-bone" class="mesh-res-select" title="Active bone to paint">
-                <!-- Dynamically filled -->
+          <!-- Mesh Edit Toolbar (hidden by default) -->
+          <div id="weight-preview-bar" class="mesh-edit-bar" style="display:none;">
+            <span class="arb-icon">🎨</span>
+            <span class="arb-label">Mesh Editor</span>
+
+            <!-- Mode toggle -->
+            <div class="mesh-mode-toggle">
+              <button id="mesh-mode-select" class="mesh-mode-btn active" title="Select vertices">⬡ Select</button>
+              <button id="mesh-mode-paint" class="mesh-mode-btn" title="Paint weights">🖌 Paint</button>
+            </div>
+
+            <!-- Bone selector (paint mode) -->
+            <div id="mesh-paint-controls" class="mesh-paint-controls" style="display:none;">
+              <label class="mesh-ctrl-label">Bone:
+                <select id="mesh-active-bone" class="mesh-res-select" title="Active bone to paint">
+                  <!-- Dynamically filled -->
+                </select>
+              </label>
+              <label class="mesh-ctrl-label">Size:
+                <input id="mesh-brush-size" type="range" class="mesh-brush-slider" min="5" max="200" value="40"
+                  title="Brush radius">
+                <span id="mesh-brush-size-val" class="mesh-brush-val">40</span>
+              </label>
+              <label class="mesh-ctrl-label">Str:
+                <input id="mesh-brush-strength" type="range" class="mesh-brush-slider" min="1" max="100" value="30"
+                  title="Brush strength">
+                <span id="mesh-brush-strength-val" class="mesh-brush-val">30</span>
+              </label>
+            </div>
+
+            <!-- Grid resolution -->
+            <div class="mesh-resolution-controls">
+              <label>Grid:
+                <select id="mesh-cols" class="mesh-res-select" title="Mesh columns">
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                  <option value="5" selected>5</option>
+                  <option value="6">6</option>
+                  <option value="8">8</option>
+                  <option value="10">10</option>
+                  <option value="12">12</option>
+                  <option value="16">16</option>
+                </select>
+                ×
+                <select id="mesh-rows" class="mesh-res-select" title="Mesh rows">
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                  <option value="6">6</option>
+                  <option value="8" selected>8</option>
+                  <option value="10">10</option>
+                  <option value="12">12</option>
+                  <option value="16">16</option>
+                  <option value="20">20</option>
+                </select>
+              </label>
+            </div>
+
+            <button id="wpb-apply" class="arb-btn apply">✓ Apply</button>
+            <button id="wpb-cancel" class="arb-btn cancel">✕ Cancel</button>
+          </div>
+
+          <!-- Weight Editor Panel (hidden by default) -->
+          <div id="weight-editor-panel" class="weight-editor-panel" style="display:none;">
+            <div class="wep-header">
+              <span class="wep-title">Vertex Weights</span>
+              <span id="wep-vertex-id" class="wep-vertex-id">#0</span>
+            </div>
+            <div id="wep-sliders" class="wep-sliders">
+              <!-- Dynamically filled with bone weight sliders -->
+            </div>
+          </div>
+
+          <div id="viewport-info" class="viewport-info">
+            <span id="zoom-level">100%</span>
+            <span id="cursor-pos">0, 0</span>
+          </div>
+        </main>
+
+        <!-- Timeline Panel -->
+        <div id="timeline-panel" class="timeline-panel">
+          <div class="timeline-toolbar">
+            <div class="timeline-controls">
+              <button id="tl-play" class="tl-btn" title="Play / Pause (Space)">▶</button>
+              <button id="tl-stop" class="tl-btn" title="Stop">⏹</button>
+              <button id="tl-loop" class="tl-btn active" title="Toggle Loop">🔁</button>
+              <div class="tl-separator"></div>
+              <select id="tl-anim-select" class="tl-select" title="Select Animation">
+                <option disabled selected>(no animation)</option>
               </select>
-            </label>
-            <label class="mesh-ctrl-label">Size:
-              <input id="mesh-brush-size" type="range" class="mesh-brush-slider" min="5" max="200" value="40"
-                title="Brush radius">
-              <span id="mesh-brush-size-val" class="mesh-brush-val">40</span>
-            </label>
-            <label class="mesh-ctrl-label">Str:
-              <input id="mesh-brush-strength" type="range" class="mesh-brush-slider" min="1" max="100" value="30"
-                title="Brush strength">
-              <span id="mesh-brush-strength-val" class="mesh-brush-val">30</span>
-            </label>
+              <button id="tl-add-anim" class="tl-btn small" title="New Animation">+ Anim</button>
+              <div class="tl-separator"></div>
+              <button id="tl-add-key" class="tl-btn accent" title="Insert Keyframe (K)">◆ Key</button>
+              <button id="tl-key-all" class="tl-btn" title="Keyframe All Bones (Shift+K)">◆ All</button>
+              <div class="tl-separator"></div>
+              <span id="tl-time" class="tl-time">0.00s</span>
+              <span class="tl-time">/ </span>
+              <input id="tl-duration" class="tl-duration-input" type="number" value="2" min="0.5" max="30" step="0.5"
+                title="Animation Duration (seconds)">
+              <span class="tl-time">s</span>
+            </div>
           </div>
-
-          <!-- Grid resolution -->
-          <div class="mesh-resolution-controls">
-            <label>Grid:
-              <select id="mesh-cols" class="mesh-res-select" title="Mesh columns">
-                <option value="2">2</option>
-                <option value="3">3</option>
-                <option value="4">4</option>
-                <option value="5" selected>5</option>
-                <option value="6">6</option>
-                <option value="8">8</option>
-                <option value="10">10</option>
-                <option value="12">12</option>
-                <option value="16">16</option>
-              </select>
-              ×
-              <select id="mesh-rows" class="mesh-res-select" title="Mesh rows">
-                <option value="2">2</option>
-                <option value="3">3</option>
-                <option value="4">4</option>
-                <option value="6">6</option>
-                <option value="8" selected>8</option>
-                <option value="10">10</option>
-                <option value="12">12</option>
-                <option value="16">16</option>
-                <option value="20">20</option>
-              </select>
-            </label>
-          </div>
-
-          <button id="wpb-apply" class="arb-btn apply">✓ Apply</button>
-          <button id="wpb-cancel" class="arb-btn cancel">✕ Cancel</button>
+          <canvas id="timeline-canvas"></canvas>
         </div>
-
-        <!-- Weight Editor Panel (hidden by default) -->
-        <div id="weight-editor-panel" class="weight-editor-panel" style="display:none;">
-          <div class="wep-header">
-            <span class="wep-title">Vertex Weights</span>
-            <span id="wep-vertex-id" class="wep-vertex-id">#0</span>
-          </div>
-          <div id="wep-sliders" class="wep-sliders">
-            <!-- Dynamically filled with bone weight sliders -->
-          </div>
-        </div>
-
-        <div id="viewport-info" class="viewport-info">
-          <span id="zoom-level">100%</span>
-          <span id="cursor-pos">0, 0</span>
-        </div>
-      </main>
+      </div> <!-- /.canvas-wrapper -->
 
       <!-- Right Panel: Properties -->
       <aside id="right-panel" class="panel right-panel">
@@ -241,27 +270,7 @@
           </div>
         </div>
       </aside>
-    </div>
-
-    <!-- Timeline Panel -->
-    <div id="timeline-panel" class="timeline-panel">
-      <div class="timeline-toolbar">
-        <div class="timeline-controls">
-          <button id="tl-play" class="tl-btn" title="Play / Pause (Space)">▶</button>
-          <button id="tl-stop" class="tl-btn" title="Stop">⏹</button>
-          <button id="tl-loop" class="tl-btn active" title="Toggle Loop">🔁</button>
-          <div class="tl-separator"></div>
-          <select id="tl-anim-select" class="tl-select" title="Select Animation">
-            <option disabled selected>(no animation)</option>
-          </select>
-          <button id="tl-add-anim" class="tl-btn small" title="New Animation">+ Anim</button>
-          <div class="tl-separator"></div>
-          <button id="tl-add-key" class="tl-btn accent" title="Insert Keyframe (K)">◆ Key</button>
-          <span id="tl-time" class="tl-time">0.00s</span>
-        </div>
-      </div>
-      <canvas id="timeline-canvas"></canvas>
-    </div>
+    </div> <!-- /.main-content -->
 
     <!-- Status Bar -->
     <footer id="status-bar" class="status-bar">

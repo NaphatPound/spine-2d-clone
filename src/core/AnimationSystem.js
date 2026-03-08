@@ -299,6 +299,12 @@ export default class AnimationSystem {
         if (!this.currentAnimation) {
             this.currentAnimation = anim;
         }
+
+        // Auto-capture setup pose if not yet captured
+        if (!this._setupPose) {
+            this.captureSetupPose();
+        }
+
         bus.emit('animation:created', anim);
         bus.emit('animation:changed');
         return anim;

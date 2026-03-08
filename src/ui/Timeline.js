@@ -73,6 +73,22 @@ export default class Timeline {
             this._insertKeyframeForSelected();
         });
 
+        // Key All button
+        document.getElementById('tl-key-all')?.addEventListener('click', () => {
+            this._insertKeyframeForAll();
+        });
+
+        // Duration input
+        this.durationInput = document.getElementById('tl-duration');
+        this.durationInput?.addEventListener('change', () => {
+            if (this.animSystem.currentAnimation) {
+                const val = parseFloat(this.durationInput.value) || 2;
+                this.animSystem.currentAnimation.duration = Math.max(0.5, Math.min(30, val));
+                this.durationInput.value = this.animSystem.currentAnimation.duration;
+                this.render();
+            }
+        });
+
         this.animSelect?.addEventListener('change', () => {
             const anim = this.animSystem.animations.find(a => a.name === this.animSelect.value);
             if (anim) {
@@ -134,9 +150,23 @@ export default class Timeline {
         }
         if (!this.animSystem.currentAnimation) {
             this.animSystem.createAnimation('animation', 2.0);
-            this.animSystem.captureSetupPose();
         }
         this.animSystem.insertKeyframe(bone.name);
+        this.render();
+    }
+
+    _insertKeyframeForAll() {
+        if (this.boneSystem.bones.length === 0) {
+            bus.emit('toast', { message: 'No bones to keyframe', type: 'warning' });
+            return;
+        }
+        if (!this.animSystem.currentAnimation) {
+            this.animSystem.createAnimation('animation', 2.0);
+        }
+        for (const bone of this.boneSystem.bones) {
+            this.animSystem.insertKeyframe(bone.name);
+        }
+        bus.emit('toast', { message: `Keyframed ${this.boneSystem.bones.length} bones at ${this.animSystem.currentTime.toFixed(2)}s`, type: 'success' });
         this.render();
     }
 
@@ -269,9 +299,11 @@ export default class Timeline {
     _onWheel(e) {
         e.preventDefault();
         if (e.shiftKey) {
-            this.scrollY = Math.max(0, this.scrollY + e.deltaY * 0.5);
-        } else {
+            // Shift+scroll = horizontal (time scrub)
             this.scrollX = Math.max(0, this.scrollX + e.deltaY * 0.5);
+        } else {
+            // Normal scroll = vertical (bone tracks)
+            this.scrollY = Math.max(0, this.scrollY + e.deltaY * 0.5);
         }
         this.render();
     }
@@ -563,6 +595,7 @@ export default class Timeline {
             opt.disabled = true;
             opt.selected = true;
             this.animSelect.appendChild(opt);
+            if (this.durationInput) this.durationInput.value = 2;
             return;
         }
 
@@ -572,6 +605,11 @@ export default class Timeline {
             opt.textContent = anim.name;
             opt.selected = anim === current;
             this.animSelect.appendChild(opt);
+        }
+
+        // Update duration input
+        if (this.durationInput && current) {
+            this.durationInput.value = current.duration;
         }
     }
 }

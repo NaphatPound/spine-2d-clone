@@ -87,6 +87,11 @@ class App {
 
         // Toast events from timeline
         bus.on('toast', (data) => this.ui.showToast(data.message, data.type));
+
+        // When animation time changes (scrub, playback), re-render viewport
+        bus.on('animation:timechange', () => this.viewport.render());
+        // When play starts, kick off continuous rendering
+        bus.on('animation:play', () => this.viewport.render());
     }
 
     // -------- Render Pipeline --------
@@ -133,6 +138,10 @@ class App {
             // Tick animation system
             this.animSystem.tick();
             this.boneSystem.render(ctx, vp);
+            // Keep rendering while animation is playing
+            if (this.animSystem.playing) {
+                this.viewport.render();
+            }
         });
 
         this.viewport.render();
@@ -269,7 +278,6 @@ class App {
         document.getElementById('autorig-preview-bar').style.display = 'none';
 
         // Auto-create slots mapping bones to the image
-        // (autoCreateSlots also converts image x/y to bone-local space)
         this.slotSystem.autoCreateSlots(this.boneSystem.bones, this.imageManager.images);
 
         // Auto-generate mesh and weights for each image
@@ -277,6 +285,10 @@ class App {
             const mesh = this.meshSystem.generateMesh(img, 5, 8);
             this.meshSystem.autoComputeWeights(mesh, img);
         }
+
+        // Capture the current bone positions as the setup (rest) pose
+        // This MUST happen after bones are finalized but before user edits
+        this.animSystem.captureSetupPose();
 
         // Show weight preview for the first image
         if (this.imageManager.images.length > 0) {
@@ -897,11 +909,22 @@ class App {
                     }
                     break;
                 case 'k':
-                    // Insert keyframe at current playhead
-                    if (this.boneSystem.selectedBone) {
+                    // Insert keyframe
+                    if (e.shiftKey) {
+                        // Shift+K = keyframe ALL bones
+                        if (this.boneSystem.bones.length > 0) {
+                            if (!this.animSystem.currentAnimation) {
+                                this.animSystem.createAnimation('animation', 2.0);
+                            }
+                            for (const bone of this.boneSystem.bones) {
+                                this.animSystem.insertKeyframe(bone.name);
+                            }
+                            this.ui.showToast(`Keyframed all ${this.boneSystem.bones.length} bones at ${this.animSystem.currentTime.toFixed(2)}s`, 'success');
+                        }
+                    } else if (this.boneSystem.selectedBone) {
+                        // K = keyframe selected bone
                         if (!this.animSystem.currentAnimation) {
                             this.animSystem.createAnimation('animation', 2.0);
-                            this.animSystem.captureSetupPose();
                         }
                         this.animSystem.insertKeyframe(this.boneSystem.selectedBone.name);
                         this.ui.showToast(`Keyframe added at ${this.animSystem.currentTime.toFixed(2)}s`, 'success');
