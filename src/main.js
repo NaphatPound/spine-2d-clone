@@ -1214,7 +1214,9 @@ class App {
                         this.imageManager.addImageEntry(entry);
                         count++;
                     }
-                    this.ui.showToast(`Imported ${entries.length} layer${entries.length > 1 ? 's' : ''} from ${file.name}`, 'success');
+                    // Auto-trim all imported layers to visible content
+                    const trimmed = this.imageManager.trimAllToContent();
+                    this.ui.showToast(`Imported ${entries.length} layer${entries.length > 1 ? 's' : ''} from ${file.name} (${trimmed} trimmed)`, 'success');
                 } catch (err) {
                     console.error('PSD import error:', err);
                     this.ui.showToast(`Failed to import PSD: ${file.name}`, 'error');
