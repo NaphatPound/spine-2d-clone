@@ -255,6 +255,76 @@ export default class MeshSystem {
     }
 
     /**
+     * "Bone area" mode — blend weights across ALL bones in the assigned chain.
+     * Every vertex gets weighted by all bones in the chain (parent + descendants)
+     * using inverse-distance, so the entire chain contributes with smooth blending.
+     * No bone limit — all chain bones participate.
+     */
+    autoComputeWeightsBoneArea(mesh, image, allowedBones = null) {
+        const allBones = this.boneSystem.bones;
+        if (allBones.length === 0) return;
+
+        const bones = allowedBones
+            ? allBones.filter(b => allowedBones.includes(b.name))
+            : allBones;
+        if (bones.length === 0) return;
+
+        const vertexWorldPositions = [];
+
+        for (let vi = 0; vi < mesh.vertices.length; vi++) {
+            const vert = mesh.vertices[vi];
+            const wx = image.x + vert.x;
+            const wy = image.y + vert.y;
+            vertexWorldPositions.push({ x: wx, y: wy });
+
+            // Calculate distance to every bone in the chain
+            const rawWeights = {};
+            for (const bone of bones) {
+                let dist;
+                if (bone.length > 0) {
+                    const boneRad = bone.worldRotation * Math.PI / 180;
+                    const ex = bone.worldX + Math.cos(boneRad) * bone.length;
+                    const ey = bone.worldY + Math.sin(boneRad) * bone.length;
+                    dist = this._pointToSegmentDist(wx, wy, bone.worldX, bone.worldY, ex, ey);
+                } else {
+                    dist = Math.sqrt((wx - bone.worldX) ** 2 + (wy - bone.worldY) ** 2);
+                }
+                dist = Math.max(dist, 0.1);
+                // Inverse-distance² — all chain bones contribute
+                rawWeights[bone.name] = 1 / (dist * dist);
+            }
+
+            // Normalize — every chain bone gets a share
+            const sum = Object.values(rawWeights).reduce((s, w) => s + w, 0);
+            const normalizedWeights = {};
+            for (const [name, w] of Object.entries(rawWeights)) {
+                const nw = Math.round((w / sum) * 1000) / 1000;
+                if (nw > 0.01) normalizedWeights[name] = nw;
+            }
+            // Re-normalize after filtering tiny weights
+            const sum2 = Object.values(normalizedWeights).reduce((s, w) => s + w, 0);
+            for (const key of Object.keys(normalizedWeights)) {
+                normalizedWeights[key] /= sum2;
+            }
+
+            mesh.weights[vi] = normalizedWeights;
+        }
+
+        // Store bind-pose
+        mesh.bindPose = {};
+        for (const bone of allBones) {
+            mesh.bindPose[bone.name] = {
+                worldX: bone.worldX,
+                worldY: bone.worldY,
+                worldRotation: bone.worldRotation
+            };
+        }
+        mesh.bindVertexWorldPositions = vertexWorldPositions;
+
+        bus.emit('mesh:weights-updated', { imageId: mesh.imageId });
+    }
+
+    /**
      * Set a specific vertex's weight for a bone. Re-normalizes other weights.
      */
     setVertexWeight(meshId, vertexIdx, boneName, weight) {

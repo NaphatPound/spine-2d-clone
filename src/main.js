@@ -282,6 +282,38 @@ class App {
         };
         this._getMeshGridSize = getMeshGridSize;
         document.getElementById('mesh-grid-size')?.addEventListener('change', regenerateMeshes);
+
+        // Auto Weight button
+        document.getElementById('btn-auto-weight')?.addEventListener('click', () => {
+            const mode = document.getElementById('mesh-weight-mode')?.value || 'nearest';
+            let skipped = 0;
+            for (const img of this.imageManager.images) {
+                const mesh = this.meshSystem.getMesh(img.id);
+                if (!mesh) continue;
+
+                if (mode === 'bone-area') {
+                    // Bone Area requires a bone assignment — use full limb chain
+                    if (!img.boneName) { skipped++; continue; }
+                    const allowedBones = this.ui._getBoneFullChain(img.boneName);
+                    this.meshSystem.autoComputeWeightsBoneArea(mesh, img, allowedBones);
+                } else {
+                    const allowedBones = img.boneName
+                        ? this.ui._getBoneAndDescendants(img.boneName)
+                        : null;
+                    this.meshSystem.autoComputeWeights(mesh, img, 4, allowedBones);
+                }
+            }
+            if (this.meshSystem.weightPreviewActive) {
+                this.meshSystem.selectedVertexIdx = -1;
+                document.getElementById('weight-editor-panel').style.display = 'none';
+            }
+            this.viewport.render();
+            if (skipped > 0) {
+                this.ui.showToast(`Weights recalculated (${mode}) — ${skipped} image(s) skipped (no bone assigned)`, 'warning');
+            } else {
+                this.ui.showToast(`Weights recalculated (${mode})`, 'success');
+            }
+        });
     }
 
     async _startAutoRigPreview() {

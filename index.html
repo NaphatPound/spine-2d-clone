@@ -195,6 +195,17 @@
               </label>
             </div>
 
+            <!-- Auto Weight -->
+            <div class="mesh-resolution-controls">
+              <label>Weight:
+                <select id="mesh-weight-mode" class="mesh-res-select" title="Auto weight mode" style="width:90px;">
+                  <option value="nearest">Nearest</option>
+                  <option value="bone-area">Bone Area</option>
+                </select>
+              </label>
+              <button id="btn-auto-weight" class="arb-btn apply" title="Recalculate weights for all meshes">⟳ Auto Weight</button>
+            </div>
+
             <button id="wpb-apply" class="arb-btn apply">✓ Apply</button>
             <button id="wpb-cancel" class="arb-btn cancel">✕ Cancel</button>
           </div>

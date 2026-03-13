@@ -485,7 +485,14 @@ export default class UIManager {
         const allowedBones = image.boneName
             ? this._getBoneAndDescendants(image.boneName)
             : null;
-        meshSystem.autoComputeWeights(mesh, image, 4, allowedBones);
+        const mode = document.getElementById('mesh-weight-mode')?.value || 'nearest';
+        if (mode === 'bone-area' && image.boneName) {
+            // Bone Area: use full limb chain (ancestors + descendants)
+            const boneAreaBones = this._getBoneFullChain(image.boneName);
+            meshSystem.autoComputeWeightsBoneArea(mesh, image, boneAreaBones);
+        } else {
+            meshSystem.autoComputeWeights(mesh, image, 4, allowedBones);
+        }
     }
 
     _getBoneAndDescendants(boneName) {
@@ -497,6 +504,34 @@ export default class UIManager {
             for (const child of b.children) collect(child);
         };
         collect(bone);
+        return result;
+    }
+
+    /**
+     * Get the full bone chain (limb branch) that a bone belongs to.
+     * Walks UP to find the branch root (ancestor whose parent is null or
+     * has multiple children), then collects all descendants of that root.
+     * e.g. left_hand → [left_upper_arm, left_forearm, left_hand]
+     */
+    _getBoneFullChain(boneName) {
+        const bone = this.app.boneSystem.getBoneByName(boneName);
+        if (!bone) return null;
+
+        // Walk up to find the limb/branch root
+        let branchRoot = bone;
+        while (branchRoot.parent) {
+            // Stop if parent has multiple children (it's a branch point like spine)
+            if (branchRoot.parent.children.length > 1) break;
+            branchRoot = branchRoot.parent;
+        }
+
+        // Collect all descendants from the branch root
+        const result = [];
+        const collect = (b) => {
+            result.push(b.name);
+            for (const child of b.children) collect(child);
+        };
+        collect(branchRoot);
         return result;
     }
 
