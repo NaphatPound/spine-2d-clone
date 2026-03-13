@@ -71,7 +71,7 @@ export default class UIManager {
             for (const img of boundImages) {
                 const isImgSelected = img === imageManager.selectedImage;
                 html += `<div class="tree-item tree-image-item ${isImgSelected ? 'selected' : ''}" 
-                        data-image-id="${img.id}"
+                        data-image-id="${img.id}" draggable="true"
                         style="--depth: ${depth + 1}; border-left: 3px solid ${isImgSelected ? '#4f9cf7' : 'transparent'};">
             <span class="tree-toggle invisible"></span>
             <span class="tree-img-icon">🖼</span>
@@ -90,14 +90,14 @@ export default class UIManager {
 
         // Show unbound images at end
         if (unboundImages.length > 0) {
-            html += `<div class="tree-item" style="--depth: 0; opacity: 0.5; pointer-events:none;">
+            html += `<div class="tree-item tree-unbound-zone" data-drop-zone="unbound" style="--depth: 0;">
         <span class="tree-toggle invisible"></span>
         <span class="tree-label" style="font-style:italic; color:var(--text-muted);">Unbound Images</span>
       </div>`;
             for (const img of unboundImages) {
                 const isImgSelected = img === imageManager.selectedImage;
                 html += `<div class="tree-item tree-image-item ${isImgSelected ? 'selected' : ''}" 
-                        data-image-id="${img.id}"
+                        data-image-id="${img.id}" draggable="true"
                         style="--depth: 1; border-left: 3px solid ${isImgSelected ? '#4f9cf7' : 'transparent'};">
             <span class="tree-toggle invisible"></span>
             <span class="tree-img-icon">🖼</span>
@@ -142,6 +142,9 @@ export default class UIManager {
                 this.app.viewport.render();
             });
         });
+
+        // Set up drag-and-drop for image reparenting
+        this._setupBoneTreeDragDrop(container);
     }
 
     _showBoneContextMenu(x, y, bone) {
@@ -535,7 +538,85 @@ export default class UIManager {
         });
     }
 
-    // -------- Drag & Drop --------
+    // -------- Bone Tree Drag & Drop (Image Reparenting) --------
+
+    _setupBoneTreeDragDrop(container) {
+        const { imageManager, boneSystem } = this.app;
+
+        // --- dragstart on image items ---
+        container.querySelectorAll('.tree-image-item[draggable]').forEach(el => {
+            el.addEventListener('dragstart', (e) => {
+                e.stopPropagation();
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', el.dataset.imageId);
+                el.classList.add('dragging');
+            });
+            el.addEventListener('dragend', () => {
+                el.classList.remove('dragging');
+                // Clean up all drag-over highlights
+                container.querySelectorAll('.drag-over').forEach(d => d.classList.remove('drag-over'));
+            });
+        });
+
+        // --- dragover / dragenter / dragleave / drop on bone items ---
+        const dropTargets = container.querySelectorAll('.tree-item[data-bone-id], .tree-item[data-drop-zone="unbound"]');
+        dropTargets.forEach(target => {
+            target.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+            });
+            target.addEventListener('dragenter', (e) => {
+                e.preventDefault();
+                target.classList.add('drag-over');
+            });
+            target.addEventListener('dragleave', (e) => {
+                // Only remove if actually leaving the target (not entering a child)
+                if (!target.contains(e.relatedTarget)) {
+                    target.classList.remove('drag-over');
+                }
+            });
+            target.addEventListener('drop', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                target.classList.remove('drag-over');
+
+                const imageId = parseInt(e.dataTransfer.getData('text/plain'));
+                if (isNaN(imageId)) return;
+
+                const img = imageManager.images.find(i => i.id === imageId);
+                if (!img) return;
+
+                // Determine target bone name
+                let newBoneName = null;
+                if (target.dataset.boneId) {
+                    const boneId = parseInt(target.dataset.boneId);
+                    const bone = boneSystem.bones.find(b => b.id === boneId);
+                    if (bone) newBoneName = bone.name;
+                }
+                // data-drop-zone="unbound" → newBoneName stays null
+
+                // Skip if same assignment
+                if (img.boneName === newBoneName) return;
+
+                const oldBone = img.boneName || '(unbound)';
+                img.boneName = newBoneName;
+
+                // Recalculate mesh weights for new bone assignment
+                this._recalcImageWeights(img);
+
+                // Refresh UI
+                this.updateBoneTree();
+                this.updateSlotsList();
+                this.updateProperties();
+                this.app.viewport.render();
+
+                const targetLabel = newBoneName || 'Unbound';
+                this.showToast(`Moved "${img.name}" → ${targetLabel}`, 'success');
+            });
+        });
+    }
+
+    // -------- Drag & Drop (File Import) --------
 
     _setupDragDrop() {
         let overlay = document.createElement('div');
@@ -547,11 +628,14 @@ export default class UIManager {
 
         document.addEventListener('dragenter', (e) => {
             e.preventDefault();
+            // Only show overlay for external file drops, not internal tree drags
+            if (!e.dataTransfer.types.includes('Files')) return;
             dragCounter++;
             overlay.classList.add('active');
         });
 
         document.addEventListener('dragleave', (e) => {
+            if (!e.dataTransfer.types.includes('Files')) return;
             dragCounter--;
             if (dragCounter === 0) overlay.classList.remove('active');
         });

@@ -243,6 +243,14 @@ class App {
             this._meshActiveBone = e.target.value;
         });
 
+        // Sync paint bone with tree/viewport bone selection
+        bus.on('bones:selected', (bone) => {
+            if (!this._meshEditMode || !bone) return;
+            this._meshActiveBone = bone.name;
+            const select = document.getElementById('mesh-active-bone');
+            if (select) select.value = bone.name;
+        });
+
         // Mesh resolution controls
         const regenerateMeshes = () => {
             const cols = parseInt(document.getElementById('mesh-cols')?.value || '5');
@@ -517,7 +525,12 @@ class App {
             opt.style.color = bone.color || '#c8d850';
             select.appendChild(opt);
         }
-        if (this.boneSystem.bones.length > 0) {
+        // Default to the currently selected bone, or fall back to the first bone
+        const selected = this.boneSystem.selectedBone;
+        if (selected) {
+            this._meshActiveBone = selected.name;
+            select.value = selected.name;
+        } else if (this.boneSystem.bones.length > 0) {
             this._meshActiveBone = this.boneSystem.bones[0].name;
         }
     }
