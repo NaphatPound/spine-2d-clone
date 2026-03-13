@@ -184,6 +184,119 @@ export default class ImageManager {
         return count;
     }
 
+    /**
+     * Remove small disconnected pixel fragments (noise) from an image.
+     * Uses flood-fill to find connected components, keeps only the largest one.
+     * @param {object} entry - Image entry to clean
+     * @returns {boolean} true if noise was removed
+     */
+    removeNoise(entry) {
+        const img = entry.img;
+        if (!img) return false;
+
+        const w = img.naturalWidth || img.width;
+        const h = img.naturalHeight || img.height;
+        if (w === 0 || h === 0) return false;
+
+        // Draw to temp canvas to read pixels
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(0, 0, w, h);
+        const data = imageData.data;
+
+        // Label connected components using flood-fill (4-connected)
+        const labels = new Int32Array(w * h);
+        const componentSizes = [0]; // index 0 = background
+        let currentLabel = 0;
+        const alphaThreshold = 10;
+
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                const idx = y * w + x;
+                if (labels[idx] !== 0) continue;
+                if (data[idx * 4 + 3] < alphaThreshold) continue;
+
+                // BFS flood-fill
+                currentLabel++;
+                let size = 0;
+                const queue = [idx];
+                labels[idx] = currentLabel;
+
+                while (queue.length > 0) {
+                    const ci = queue.pop();
+                    size++;
+                    const cx = ci % w;
+                    const cy = (ci - cx) / w;
+
+                    // 4-connected neighbors
+                    const neighbors = [];
+                    if (cx > 0) neighbors.push(ci - 1);
+                    if (cx < w - 1) neighbors.push(ci + 1);
+                    if (cy > 0) neighbors.push(ci - w);
+                    if (cy < h - 1) neighbors.push(ci + w);
+
+                    for (const ni of neighbors) {
+                        if (labels[ni] !== 0) continue;
+                        if (data[ni * 4 + 3] < alphaThreshold) continue;
+                        labels[ni] = currentLabel;
+                        queue.push(ni);
+                    }
+                }
+                componentSizes.push(size);
+            }
+        }
+
+        if (currentLabel <= 1) return false; // 0 or 1 component, nothing to remove
+
+        // Find the largest component
+        let largestLabel = 1;
+        let largestSize = 0;
+        for (let i = 1; i <= currentLabel; i++) {
+            if (componentSizes[i] > largestSize) {
+                largestSize = componentSizes[i];
+                largestLabel = i;
+            }
+        }
+
+        // Clear pixels not in the largest component
+        let removedPixels = 0;
+        for (let i = 0; i < w * h; i++) {
+            if (data[i * 4 + 3] >= alphaThreshold && labels[i] !== largestLabel) {
+                data[i * 4] = 0;
+                data[i * 4 + 1] = 0;
+                data[i * 4 + 2] = 0;
+                data[i * 4 + 3] = 0;
+                removedPixels++;
+            }
+        }
+
+        if (removedPixels === 0) return false;
+
+        // Write cleaned image back
+        ctx.putImageData(imageData, 0, 0);
+        canvas.naturalWidth = w;
+        canvas.naturalHeight = h;
+        entry.img = canvas;
+
+        bus.emit('images:changed');
+        return true;
+    }
+
+    /**
+     * Remove noise from all images.
+     * @returns {number} Number of images cleaned
+     */
+    removeNoiseAll() {
+        let count = 0;
+        for (const img of this.images) {
+            if (this.removeNoise(img)) count++;
+        }
+        return count;
+    }
+
     reorder(fromIndex, toIndex) {
         const [item] = this.images.splice(fromIndex, 1);
         this.images.splice(toIndex, 0, item);

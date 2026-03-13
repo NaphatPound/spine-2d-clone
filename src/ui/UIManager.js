@@ -397,6 +397,14 @@ export default class UIManager {
               ✂ Trim All
             </button>
           </div>
+          <div class="prop-row" style="justify-content:flex-end;margin-top:4px">
+            <button class="btn btn-sm" id="prop-img-denoise" title="Remove small disconnected fragments — keep only the largest connected area">
+              🧹 Remove Noise
+            </button>
+            <button class="btn btn-sm" id="prop-img-denoise-all" title="Remove noise from all images" style="margin-left:4px">
+              🧹 Denoise All
+            </button>
+          </div>
         </div>`;
 
             this._bindPropNumber('prop-img-x', (v) => { image.x = v; this.app.viewport.render(); });
@@ -453,6 +461,34 @@ export default class UIManager {
                     this.updateLayerList();
                     this.app.viewport.render();
                     this.showToast(`Trimmed ${count} images to content`, 'success');
+                });
+            }
+
+            // Remove Noise button
+            const denoiseBtn = document.getElementById('prop-img-denoise');
+            if (denoiseBtn) {
+                denoiseBtn.addEventListener('click', () => {
+                    const cleaned = this.app.imageManager.removeNoise(image);
+                    if (cleaned) {
+                        this.updateProperties();
+                        this.updateLayerList();
+                        this.app.viewport.render();
+                        this.showToast(`Removed noise from "${image.name}"`, 'success');
+                    } else {
+                        this.showToast('No noise found — image is clean', 'info');
+                    }
+                });
+            }
+
+            // Denoise All button
+            const denoiseAllBtn = document.getElementById('prop-img-denoise-all');
+            if (denoiseAllBtn) {
+                denoiseAllBtn.addEventListener('click', () => {
+                    const count = this.app.imageManager.removeNoiseAll();
+                    this.updateProperties();
+                    this.updateLayerList();
+                    this.app.viewport.render();
+                    this.showToast(`Removed noise from ${count} image(s)`, 'success');
                 });
             }
 
