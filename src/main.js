@@ -1214,7 +1214,8 @@ class App {
                         this.imageManager.addImageEntry(entry);
                         count++;
                     }
-                    // Auto-trim all imported layers to visible content
+                    // Auto-denoise and trim all imported layers
+                    this.imageManager.removeNoiseAll();
                     const trimmed = this.imageManager.trimAllToContent();
                     this.ui.showToast(`Imported ${entries.length} layer${entries.length > 1 ? 's' : ''} from ${file.name} (${trimmed} trimmed)`, 'success');
                 } catch (err) {
@@ -1228,6 +1229,10 @@ class App {
             if (file.type.startsWith('image/')) {
                 try {
                     await this.imageManager.addImage(file);
+                    // Auto-denoise and trim the newly added image
+                    const newImg = this.imageManager.images[this.imageManager.images.length - 1];
+                    this.imageManager.removeNoise(newImg);
+                    this.imageManager.trimToContent(newImg);
                     count++;
                 } catch (err) {
                     console.error(err);
