@@ -91,8 +91,7 @@ class App {
             if (this._meshEditMode && entry) {
                 // Generate mesh for this image if it doesn't exist
                 if (!this.meshSystem.getMesh(entry.id)) {
-                    const cols = parseInt(document.getElementById('mesh-cols')?.value || '5');
-                    const rows = parseInt(document.getElementById('mesh-rows')?.value || '8');
+                    const { cols, rows } = this._getMeshGridSize();
                     const mesh = this.meshSystem.generateMesh(entry, cols, rows);
                     this.meshSystem.autoComputeWeights(mesh, entry);
                 }
@@ -185,6 +184,12 @@ class App {
             }
         });
 
+        // Grid size dropdown
+        document.getElementById('grid-size-select')?.addEventListener('change', (e) => {
+            this.viewport.gridSize = parseInt(e.target.value);
+            this.viewport.render();
+        });
+
         // Auto Rig — start preview
         document.getElementById('btn-auto-rig')?.addEventListener('click', () => {
             this._startAutoRigPreview();
@@ -252,9 +257,18 @@ class App {
         });
 
         // Mesh resolution controls
+        const meshGridPresets = {
+            s:  { cols: 2,  rows: 3  },
+            m:  { cols: 4,  rows: 6  },
+            l:  { cols: 5,  rows: 8  },
+            xl: { cols: 10, rows: 16 },
+        };
+        const getMeshGridSize = () => {
+            const size = document.getElementById('mesh-grid-size')?.value || 'l';
+            return meshGridPresets[size] || meshGridPresets.l;
+        };
         const regenerateMeshes = () => {
-            const cols = parseInt(document.getElementById('mesh-cols')?.value || '5');
-            const rows = parseInt(document.getElementById('mesh-rows')?.value || '8');
+            const { cols, rows } = getMeshGridSize();
             for (const img of this.imageManager.images) {
                 this.meshSystem.removeMesh(img.id);
                 const mesh = this.meshSystem.generateMesh(img, cols, rows);
@@ -266,8 +280,8 @@ class App {
             }
             this.viewport.render();
         };
-        document.getElementById('mesh-cols')?.addEventListener('change', regenerateMeshes);
-        document.getElementById('mesh-rows')?.addEventListener('change', regenerateMeshes);
+        this._getMeshGridSize = getMeshGridSize;
+        document.getElementById('mesh-grid-size')?.addEventListener('change', regenerateMeshes);
     }
 
     async _startAutoRigPreview() {
@@ -463,8 +477,7 @@ class App {
         document.getElementById('btn-mesh-edit')?.classList.add('active');
 
         // Generate meshes if they don't exist
-        const cols = parseInt(document.getElementById('mesh-cols')?.value || '5');
-        const rows = parseInt(document.getElementById('mesh-rows')?.value || '8');
+        const { cols, rows } = this._getMeshGridSize();
         for (const img of this.imageManager.images) {
             if (!this.meshSystem.getMesh(img.id)) {
                 const mesh = this.meshSystem.generateMesh(img, cols, rows);

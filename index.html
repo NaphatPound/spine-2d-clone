@@ -71,6 +71,16 @@
           🎨
         </button>
       </div>
+      <div class="toolbar-group toolbar-grid-size">
+          <label class="grid-size-label">Grid:
+            <select id="grid-size-select" class="grid-size-select" title="Grid Size">
+              <option value="10">S</option>
+              <option value="25">M</option>
+              <option value="50" selected>L</option>
+              <option value="100">XL</option>
+            </select>
+          </label>
+        </div>
       <div class="toolbar-group toolbar-actions">
         <button id="btn-import" class="action-btn" title="Import Image">
           <svg width="14" height="14" viewBox="0 0 16 16">
@@ -175,29 +185,12 @@
 
             <!-- Grid resolution -->
             <div class="mesh-resolution-controls">
-              <label>Grid:
-                <select id="mesh-cols" class="mesh-res-select" title="Mesh columns">
-                  <option value="2">2</option>
-                  <option value="3">3</option>
-                  <option value="4">4</option>
-                  <option value="5" selected>5</option>
-                  <option value="6">6</option>
-                  <option value="8">8</option>
-                  <option value="10">10</option>
-                  <option value="12">12</option>
-                  <option value="16">16</option>
-                </select>
-                ×
-                <select id="mesh-rows" class="mesh-res-select" title="Mesh rows">
-                  <option value="2">2</option>
-                  <option value="3">3</option>
-                  <option value="4">4</option>
-                  <option value="6">6</option>
-                  <option value="8" selected>8</option>
-                  <option value="10">10</option>
-                  <option value="12">12</option>
-                  <option value="16">16</option>
-                  <option value="20">20</option>
+              <label>Mesh:
+                <select id="mesh-grid-size" class="mesh-res-select" title="Mesh grid density">
+                  <option value="s">S</option>
+                  <option value="m">M</option>
+                  <option value="l" selected>L</option>
+                  <option value="xl">XL</option>
                 </select>
               </label>
             </div>
